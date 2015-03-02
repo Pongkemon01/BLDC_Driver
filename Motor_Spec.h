@@ -54,7 +54,7 @@
 //       Smaller numbers usually do not produce enough torque to start the motor.
 // There are three startup values. The one to use will be determined by measuring
 // the motor supply voltage before startup.
-#define STARTUP_DRIVE_PCT        45L
+#define STARTUP_DRIVE_PCT        13L
 
 // MAX_STARTUP_EVENTS - The startup algorithm starts by single stepping the motor
 //             this number of times. This is done to position the motor in a known
@@ -99,8 +99,14 @@ time with this value will give the RPM.
 
 #define STARTUP_DUTY_CYCLE        ((STARTUP_DRIVE_PCT*MAX_DUTY_CYCLE)/100L)
 
-// number of slow commutations between warmup and startup                                          
-#define EXCITE_STEPS                  2
+// number of current ramped-up steps during excitation. For higher inertia, 
+// use higher value.
+#define EXCITE_STEPS                  16
+// PWM ramp-up step size
+#define EXCITE_RAMP						21
+
+/* Number of contigus zero cross to confirm stable ramp up speed */
+#define STABLE_ZC_COUNT				3
 
 // blanking count in microseconds
 #define BLANKING_COUNT_us		      100L 
