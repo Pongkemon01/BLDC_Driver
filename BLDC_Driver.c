@@ -77,7 +77,6 @@ doublebyte temp_comm_time;
 int temp;
 int zc_error;
 char ctemp;
-uint8_t zc_count;
 /*---------------------------------------------------------------------------*/
 
 /* Variables for commutation state */
@@ -340,21 +339,15 @@ interrupt_handler(void)
 					{
 						if( BLDC_State == RAMPUP )
 						{
-							zc_count++;
-							if( zc_count >= STABLE_ZC_COUNT )
-							{
-								/* Turn on LED OK when entering COMMUTE */
-								LED_OK = 1;
-								BLDC_State = COMMUTE;
-								CCP1AS = ECCP1AS_INIT; /* Activate current limit */
-							}
+							/* Turn on LED OK when entering COMMUTE */
+							LED_OK = 1;
+							BLDC_State = COMMUTE;
+							CCP1AS = ECCP1AS_INIT; /* Activate current limit */
 						}
 
 						/* Reset stall timer as we have detected BEMF */
 						TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 					}
-					else
-						zc_count = 0;
 
 					/* Note by Pong: If we want to change start-up procedure--
 					for example, make different adjustment to TMR1_comm_time--
@@ -644,14 +637,9 @@ void BLDC_Setup( void )
 	SetCCPVal( STARTUP_DUTY_CYCLE );
 	CCP1CON = CCP1CON_INIT;           /* PWM on */
 
-	/* Start the first excitation step */
-	//comm_state=1;
-	//Commutate();
-	/* HIN = U; LIN = V and W */
-	PSTRCON = MODULATE_V | MODULATE_W;
-	DRIVE_U = 1;
-	DRIVE_V = 0;
-	DRIVE_W = 0;
+	/* Start the first move */
+	comm_state=1;
+	Commutate();
 
 	BLDC_State = EXCITE;
 }
@@ -661,9 +649,8 @@ void BLDC_Setup( void )
 *                                                                       *
 *      Function:       BLDC_Excite                                 *
 *                                                                       *
-*      Description:  Excite 2 motor phases simultaneously to preposition*
-*                    rotor. The wind current is ramped up instead of    *
-*                    constant to reduce oscillation.
+*      Description:  Dwell at two successive commutations before        *
+*                   starting the spin up                                *
 *      Parameters:                                                      *
 *      Return value:                                                    *
 *                                                                       *
@@ -692,12 +679,6 @@ void BLDC_Excite( void )
 		if( excite_events == 0 )
 		{
 			BLDC_State = RAMPUP;
-			/* commutation state depends on rotation direction */
-			if( ReverseDirection )
-				comm_state = 1;
-			else
-				comm_state = 2;
-			Commutate();
 			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
 			TMR1H = TMR1_comm_time.bytes.high;
 			TMR1L = TMR1_comm_time.bytes.low;
@@ -711,8 +692,7 @@ void BLDC_Excite( void )
 		{
 			/* reset the dwell timer for the next step */
 			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
-			pwm_current += EXCITE_RAMP;
-			SetCCPVal( pwm_current );
+			Commutate();
 		}
 	}
 }
@@ -1438,7 +1418,6 @@ void InitSystem( void )
 *************************************************************************/
 void PwmManager(void)
 {
-	int16_t t;
 	if( BLDC_Mode != PWM_MODE ) return; /* Operate only in PWM mode */
 
 	if( BLDC_State == COMMUTE )
@@ -1451,21 +1430,7 @@ void PwmManager(void)
 
 		if( pwm_current != desired_pwm )
 		{
-			t = ( int16_t )( desired_pwm ) - ( int16_t )( pwm_current );
-			/* Ramp to the desired_pwm instead of jump to it */
-			if( t > 50 )
-			{
-				pwm_current += 50;
-			}
-			else
-			{
-				if ( t < -50 )
-				{
-					pwm_current -= 50;
-				}
-				else
-					pwm_current = desired_pwm;
-			}
+			pwm_current = desired_pwm;
 			SetCCPVal( pwm_current );
 		}
 	}
@@ -1473,12 +1438,10 @@ void PwmManager(void)
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM control */
 		pi_blank = 0;
+		pwm_current = STARTUP_DUTY_CYCLE;
 
 		if( ( desired_pwm != 0 ) && ( BLDC_State == STOP ) )
-		{
-			pwm_current = STARTUP_DUTY_CYCLE;
 			BLDC_State = SETUP;	/* Start motor if a desired speed is set */
-		}
 	}
 }
 /*---------------------------------------------------------------------------*/
@@ -1564,10 +1527,10 @@ void SpeedManager(void)
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
 		pi_blank = 0;
 		speed_error_prev = 0;
+		pwm_current = STARTUP_DUTY_CYCLE;
 
 		if( ( desired_speed != 0 ) && ( BLDC_State == STOP ) )
 		{
-			pwm_current = STARTUP_DUTY_CYCLE;
 			if( desired_speed < 0 )
 				ReverseDirection = 1;
 			else
