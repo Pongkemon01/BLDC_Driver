@@ -74,9 +74,9 @@ typedef union {
 enum isr_state_t{zero_detect,commutate} isr_state;
 
 doublebyte temp_comm_time;
-int temp;
-int zc_error;
-char ctemp;
+uint8_t zc_count;
+int16_t zc_error;
+uint8_t ctemp;
 /*---------------------------------------------------------------------------*/
 
 /* Variables for commutation state */
@@ -98,7 +98,7 @@ enum BLDC_State_t
 	COOLDN	/* All ports+PWM are idle. Wait for all signal to cooldown */
 }BLDC_State;
 
-uint16_t startup_rpm = (0xFFFF - COMM_TIME_INIT) + 1;
+uint16_t startup_rpm = (~COMM_TIME_INIT) + 1;
 
 /* Timer for each state */
 uint8_t TMR0_excite_timer;
@@ -182,6 +182,7 @@ void Commutate(void);
 static void interrupt
 interrupt_handler(void)
 {
+static int16_t temp;
 	switch (isr_state)
 	{
 		case zero_detect:
@@ -339,15 +340,21 @@ interrupt_handler(void)
 					{
 						if( BLDC_State == RAMPUP )
 						{
+                                                    zc_count--;
+                                                    if( zc_count == 0 )
+                                                    {
 							/* Turn on LED OK when entering COMMUTE */
 							LED_OK = 1;
 							BLDC_State = COMMUTE;
 							CCP1AS = ECCP1AS_INIT; /* Activate current limit */
+                                                    }
 						}
 
 						/* Reset stall timer as we have detected BEMF */
 						TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 					}
+                                        else
+                                            zc_count = EXPECT_ZC_COUNT;
 
 					/* Note by Pong: If we want to change start-up procedure--
 					for example, make different adjustment to TMR1_comm_time--
@@ -361,9 +368,9 @@ interrupt_handler(void)
 						commutation procedure
 					}
 					*/
-					/* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
-					TMR1_comm_time.word -= (zc_error>>ERROR_SCALE);
-					temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
+                                        /* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
+                                        TMR1_comm_time.word -= (zc_error>>ERROR_SCALE);
+                                        temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
 
 					/* setup for commutation */
 					TMR1ON = 0;
@@ -621,6 +628,7 @@ void BLDC_Setup( void )
 
 	/* Setup Sub-states */
 	excite_events = EXCITE_STEPS;
+        zc_count = EXPECT_ZC_COUNT;
 
 	/* expected_zc is negative expected time remaining at zero cross event */
 	expected_zc.word = (TMR1_comm_time.word>>1) | 0x8000;
@@ -788,7 +796,7 @@ void BLDC_Commute( void )
 		 Larger numbers represent shorter periods. If the algorithm sets
 		 TMR1_comm_time to a period shorter than the stall trigger point
 		 then stop the motor.*/
-		if( TMR1_comm_time.word > MAX_TMR1_PRESET)
+		if( TMR1_comm_time.word > (uint16_t)MAX_TMR1_PRESET)
 		{
 			/* Turn on red LED when stall */
 			LED_ERROR = 1;
@@ -972,13 +980,13 @@ void BLDC_Machine( void )
 
 int16_t ReadCurrentRPM( void )
 {
-	uint16_t comm_time;
+	int16_t comm_time;
 	int16_t rpm;
 
 	/* Calculate RPM from "TMR1_comm_time" Value, which represent
 	commutation time. */
-	comm_time = ( 0xFFFF - TMR1_comm_time.word ) + 1; /* inverse the value */
-	rpm = (int16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( uint32_t )comm_time ) );
+	comm_time = (int16_t)( ( ~( TMR1_comm_time.word ) ) + 1); /* inverse the value */
+	rpm = (int16_t)( ( (int32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( int32_t )comm_time ) );
 	return( rpm );
 }
 /*---------------------------------------------------------------------------*/
@@ -1207,7 +1215,7 @@ then new data to server should be place in the SSPBUF for next SSPIF.
 				case SPI_GET_SPEED:
 					RetParam.word = ReadCurrentRPM();
 					if( ReverseDirection == 1 ) /* Reverse direction? then negative rpm */
-						RetParam.word = (0xFFFF - RetParam.word) + 1;
+						RetParam.word = (~(RetParam.word)) + 1;
 					SSPBUF = RetParam.bytes.high;
 					SPI_State = PARAM21;
 					break;
@@ -1600,6 +1608,7 @@ void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
+    uint16_t i = 0;
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	ReverseDirection = 0;
 	desired_speed = 0;
@@ -1645,12 +1654,18 @@ void main( void )
 
 	    if( TimeBaseManager() == 1 ) /* Return 1 every 10ms */
 		{
+                i++;
+                if(i == 200)
+                {
+                    BLDC_State = SETUP;
+                    desired_speed = 6000;
+                }
 			/* This block is executed every 10ms */
 			CheckOverTemp();
-			if( BLDC_Mode == SPEED_MODE )
-				SpeedManager();
-			else
-				PwmManager();
+			//if( BLDC_Mode == SPEED_MODE )
+			//	SpeedManager();
+			//else
+			//	PwmManager();
 			BLDC_Machine();
 		}
 	}

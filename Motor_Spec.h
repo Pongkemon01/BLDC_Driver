@@ -44,8 +44,10 @@
 /************************************************************************
 * Motor Definitions                                                               
 *************************************************************************/
-// start speed in electrical RPM
-#define START_RPM               130L
+/* start speed in electrical RPM. However, since timer register is a
+ * 16-bit register counting at 1MHz, counting for 1 round can manage
+ * the speed at the minimum rate of 160RPM(elec) */
+#define START_RPM               200L
 
 // STARTUP_DRIVE_PCT = determines initial CCPR1L duty cycle from speed table for motor startup
 // NOTE: A CCPR1L number that seems to work best for all applications is 13%
@@ -84,7 +86,7 @@
 #define TMR1_START_COUNT      (TMR1_COUNTS_PER_SEC/START_COMM_PER_SEC)
 
 // initial starup commutation period
-#define COMM_TIME_INIT			TMR1_START_COUNT
+#define COMM_TIME_INIT			(TMR1_START_COUNT)
 
 /* Commutation time to RPM factor. Divide this constant with the commutation
 time with this value will give the RPM.
@@ -102,16 +104,18 @@ time with this value will give the RPM.
 // number of slow commutations between warmup and startup                                          
 #define EXCITE_STEPS                  2
 
+#define EXPECT_ZC_COUNT                 3
+
 // blanking count in microseconds
 #define BLANKING_COUNT_us		      100L 
 #define BLANKING_COUNT              (BLANKING_COUNT_us * TMR1_COUNTS_PER_us)
 
 // stall commutation time in microseconds
-#define  STALL_COUNT_us             150L
+#define  STALL_COUNT_us             100L
 
 // # of Timer1 counts below which a stall condition is detected
 #define MICROSECONDS_PER_SECOND     1000000L
-#define MIN_COMM_TIME               (STALL_COUNT_us * TMR1_COUNTS_PER_SEC)/MICROSECONDS_PER_SECOND
+#define MIN_COMM_TIME               ((STALL_COUNT_us * TMR1_COUNTS_PER_SEC)/MICROSECONDS_PER_SECOND)
 
 // The raw error is divided by 2 to the power of ERROR_SCALE before accumulating.
 // Example: If the raw error is 96 and ERROR_SCALE is 3 then the error correction that is accumulated

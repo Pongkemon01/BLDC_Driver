@@ -2,8 +2,8 @@
 #define MEMBERSHIP_FUNCTION_MAX		5
 #define FUZZY_MEMBER_MIN		(-50)
 #define FUZZY_MEMBER_MAX		50
-#define FUZZY_DEGREE_MAX		250
-#define FUZZY_MEMBER_HALF_BASE	25
+#define FUZZY_DEGREE_MAX		250U
+#define FUZZY_MEMBER_HALF_BASE	25U
 #define FUZZY_SLOPE_POSITIVE	( FUZZY_DEGREE_MAX / FUZZY_MEMBER_HALF_BASE )
 typedef struct
 {
@@ -100,10 +100,10 @@ void Fuzzify( int16_t crisp, FuzzyDegree_t *fuzzy )
 		limit_min = FUZZY_MEMBER_MIN;
 		for( i = 1; i < MEMBERSHIP_FUNCTION_MAX; i++ )
 		{
-			if( crisp > limit_min && crisp <= ( limit_min + FUZZY_MEMBER_HALF_BASE ) )
+			if( crisp > limit_min && crisp <= ( limit_min + (int16_t)FUZZY_MEMBER_HALF_BASE ) )
 			{
 				fuzzy->MemberDegree[i] = (uint8_t)( FUZZY_SLOPE_POSITIVE * ( crisp - limit_min ) );
-				fuzzy->MemberDegree[i - 1] = FUZZY_DEGREE_MAX - fuzzy->MemberDegree[i];
+				fuzzy->MemberDegree[i - 1] = (uint8_t)(FUZZY_DEGREE_MAX) - fuzzy->MemberDegree[i];
 			}
 			limit_min += FUZZY_MEMBER_HALF_BASE;
 		}
@@ -181,7 +181,7 @@ void Inference( void )
 *************************************************************************/
 int16_t Defuzzify( FuzzyDegree_t *fuzzy )
 {
-	int16_t area, center, peak, temp;
+	int16_t area, center, peak, dftemp;
 	uint8_t i;
 	
 	/* Calculation using Center-of-Mass method. This is very same as
@@ -195,9 +195,9 @@ int16_t Defuzzify( FuzzyDegree_t *fuzzy )
 	/* Summation loop */
 	for( i = 0; i < MEMBERSHIP_FUNCTION_MAX; i++ )
 	{
-		temp = ( ( int16_t )( fuzzy->MemberDegree[i] ));
-		area +=  temp * peak;
-		center += temp;
+		dftemp = ( ( int16_t )( fuzzy->MemberDegree[i] ));
+		area +=  dftemp * peak;
+		center += dftemp;
 		peak += FUZZY_MEMBER_HALF_BASE;
 	}
 	

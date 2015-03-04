@@ -80,16 +80,16 @@
 
 // number of milliseconds in each timebase count
 // (i.e. resolution of TimebaseManager() in milliseconds)
-#define TIMEBASE_MS_PER_COUNT             10L
+#define TIMEBASE_MS_PER_COUNT             10
 
 // number of milliseconds in each timebase manager tick clock
 #define TIMEBASE_MS_PER_TICK              2L
 #define TIMEBASE_LOAD_10ms                (TIMEBASE_MS_PER_COUNT/TIMEBASE_MS_PER_TICK)
 
 // timebase reload value for TimebaseManager() interrupt period: 
-#define TIMEBASE_MANAGER_PERIOD_COUNT     (TIMEBASE_MS_PER_TICK*SYSTEM_FREQUENCY)/(TIMER0_PRESCALE*MILLISECONDS_PER_SEC)
+#define TIMEBASE_MANAGER_PERIOD_COUNT     ((TIMEBASE_MS_PER_TICK*SYSTEM_FREQUENCY)/(TIMER0_PRESCALE*MILLISECONDS_PER_SEC))
 
-#define TIMEBASE_MANAGER_RELOAD_COUNT     (0x00FF - TIMEBASE_MANAGER_PERIOD_COUNT)
+#define TIMEBASE_MANAGER_RELOAD_COUNT     (~TIMEBASE_MANAGER_PERIOD_COUNT)
 
 #if (TIMEBASE_MANAGER_PERIOD_COUNT > 0x00FF)
    #error "TIMER0_PRESCALE is too small. Timebase reload count exceeds 0xFF." 
@@ -128,7 +128,7 @@
 // time for continuous unstable condition to cause stall
 // TIMER0_STALL_ms = number of milliseconds in out-of-lock condition to recognize stall
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMER0_STALL_ms               3000
+#define  TIMER0_STALL_ms               2500
                                           
 // number of milliseconds between each motor stall condition check
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
@@ -188,7 +188,7 @@
 #define PWM_PERIOD             (((TIMER2_FREQUENCY/PWM_FREQ)-1L)&0xFF)   
 
  // Stall event trigger
-#define MAX_TMR1_PRESET        (0xFFFF - MIN_COMM_TIME)
+#define MAX_TMR1_PRESET        (~MIN_COMM_TIME)
 /*-----------------------------------------------------------*/
 
 /* ECCP */
