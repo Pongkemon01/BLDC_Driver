@@ -107,14 +107,16 @@ time with this value will give the RPM.
 #define EXPECT_ZC_COUNT                 3
 
 // blanking count in microseconds
-#define BLANKING_COUNT_us		      100L 
+#define BLANKING_COUNT_us		      100U
 #define BLANKING_COUNT              (BLANKING_COUNT_us * TMR1_COUNTS_PER_us)
 
 // stall commutation time in microseconds
-#define  STALL_COUNT_us             100L
+#define  STALL_COUNT_us             100UL
 
 // # of Timer1 counts below which a stall condition is detected
-#define MICROSECONDS_PER_SECOND     1000000L
+#ifndef MICROSECONDS_PER_SECOND
+    #define MICROSECONDS_PER_SECOND     1000000UL
+#endif
 #define MIN_COMM_TIME               ((STALL_COUNT_us * TMR1_COUNTS_PER_SEC)/MICROSECONDS_PER_SECOND)
 
 // The raw error is divided by 2 to the power of ERROR_SCALE before accumulating.

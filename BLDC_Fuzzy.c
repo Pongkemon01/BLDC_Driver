@@ -102,8 +102,8 @@ void Fuzzify( int16_t crisp, FuzzyDegree_t *fuzzy )
 		{
 			if( crisp > limit_min && crisp <= ( limit_min + (int16_t)FUZZY_MEMBER_HALF_BASE ) )
 			{
-				fuzzy->MemberDegree[i] = (uint8_t)( FUZZY_SLOPE_POSITIVE * ( crisp - limit_min ) );
-				fuzzy->MemberDegree[i - 1] = (uint8_t)(FUZZY_DEGREE_MAX) - fuzzy->MemberDegree[i];
+				fuzzy->MemberDegree[i] = (uint8_t)( FUZZY_SLOPE_POSITIVE * (uint16_t)( crisp - limit_min ) );
+				fuzzy->MemberDegree[i - 1] = (uint8_t)(FUZZY_DEGREE_MAX - fuzzy->MemberDegree[i]);
 			}
 			limit_min += FUZZY_MEMBER_HALF_BASE;
 		}

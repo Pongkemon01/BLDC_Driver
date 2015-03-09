@@ -57,6 +57,10 @@
 * BY DEFAULT, ALL GLOBAL VARIABLES ARE INITIALIZED TO 0 BY THE START-UP CODE. *
 ******************************************************************************/
 
+/* Divide-by-2 for uint16_t that acting like int16_t (preserve the sign bit) */
+#define UDIV2(x)	( ( x>>1 ) | 0x8000 )
+/* 2'Complement negative */
+#define UNEG(x)		( ( ~(x) ) + 1 )
 /******************************************************
  * Unions and Structures
  ******************************************************/
@@ -73,9 +77,7 @@ typedef union {
 /* Variables for ISR */
 enum isr_state_t{zero_detect,commutate} isr_state;
 
-doublebyte temp_comm_time;
 uint8_t zc_count;
-int16_t zc_error;
 uint8_t ctemp;
 /*---------------------------------------------------------------------------*/
 
@@ -98,7 +100,7 @@ enum BLDC_State_t
 	COOLDN	/* All ports+PWM are idle. Wait for all signal to cooldown */
 }BLDC_State;
 
-uint16_t startup_rpm = (~COMM_TIME_INIT) + 1;
+uint16_t startup_rpm = UNEG(COMM_TIME_INIT);
 
 /* Timer for each state */
 uint8_t TMR0_excite_timer;
@@ -182,7 +184,10 @@ void Commutate(void);
 static void interrupt
 interrupt_handler(void)
 {
-static int16_t temp;
+static int16_t temp1, temp2;
+static int16_t zc_error;
+static doublebyte temp_comm_time, temp_zc;
+
 	switch (isr_state)
 	{
 		case zero_detect:
@@ -204,9 +209,15 @@ static int16_t temp;
 				corrupted the capture */
 				do
 				{
-					zc.bytes.high = TMR1H;
-					zc.bytes.low = TMR1L;
-				}while (zc.bytes.high != TMR1H);
+					temp_zc.bytes.high = TMR1H;
+					temp_zc.bytes.low = TMR1L;
+				}while (temp_zc.bytes.high != TMR1H);
+				
+				/* Average zc time using EMA(3) */
+				if( zc.word <= TMR1_comm_time.word )
+					zc.word = temp_zc.word;
+				else
+					zc.word = UDIV2( zc.word ) + UDIV2( temp_zc.word );
 
 				if(BLDC_State == COMMUTE)
 				{
@@ -326,35 +337,40 @@ static int16_t temp;
 					   TMR1_comm_time right shift.
 					*/
 
-					expected_zc.word = (TMR1_comm_time.word>>1) | 0x8000; /* CT(n)/2 */
+					expected_zc.word = UDIV2( TMR1_comm_time.word ); /* CT(n)/2 */
 
-					zc_error = zc.word - expected_zc.word; /* ZCE(n) = ZC(n)-(CT(n)/2) */
-					temp = zc_error;
-					if(temp & 0x8000) temp = (~temp)+1;  /* absolute value */
+					zc_error = (int16_t)(zc.word - expected_zc.word); /* ZCE(n) = ZC(n)-(CT(n)/2) */
+					/* absolute value */
+					if( zc_error < 0 )
+						temp1 = -zc_error;
+					else
+						temp1 = zc_error;
+					temp2 = (int16_t)(UNEG( expected_zc.word ));
+					temp2 >>= 1;
 					/* stop forced commutation if zero cross detected within
 					middle half of commutation period */
 					/* Note by Pong: we can adjust how narrow of the zero cross
 					range. For example, ((-expected_zc.word)>>2) for within
 					the middle quater. */
-					if (temp < ((-expected_zc.word)>>1))
+					if (temp1 < temp2)
 					{
 						if( BLDC_State == RAMPUP )
 						{
-                                                    zc_count--;
-                                                    if( zc_count == 0 )
-                                                    {
-							/* Turn on LED OK when entering COMMUTE */
-							LED_OK = 1;
-							BLDC_State = COMMUTE;
-							CCP1AS = ECCP1AS_INIT; /* Activate current limit */
-                                                    }
+							zc_count--;
+							if( zc_count == 0 )
+							{
+								/* Turn on LED OK when entering COMMUTE */
+								LED_OK = 1;
+								BLDC_State = COMMUTE;
+								CCP1AS = ECCP1AS_INIT; /* Activate current limit */
+							}
 						}
 
 						/* Reset stall timer as we have detected BEMF */
 						TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 					}
-                                        else
-                                            zc_count = EXPECT_ZC_COUNT;
+					else
+						zc_count = EXPECT_ZC_COUNT;
 
 					/* Note by Pong: If we want to change start-up procedure--
 					for example, make different adjustment to TMR1_comm_time--
@@ -368,9 +384,9 @@ static int16_t temp;
 						commutation procedure
 					}
 					*/
-                                        /* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
-                                        TMR1_comm_time.word -= (zc_error>>ERROR_SCALE);
-                                        temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
+					/* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
+					TMR1_comm_time.word -= (uint16_t)(zc_error>>ERROR_SCALE);
+					temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
 
 					/* setup for commutation */
 					TMR1ON = 0;
@@ -628,18 +644,17 @@ void BLDC_Setup( void )
 
 	/* Setup Sub-states */
 	excite_events = EXCITE_STEPS;
-        zc_count = EXPECT_ZC_COUNT;
-
-	/* expected_zc is negative expected time remaining at zero cross event */
-	expected_zc.word = (TMR1_comm_time.word>>1) | 0x8000;
-
-	/* Setup commutation timing */
-	zc.word = 0;
-	comm_after_zc.word = 0;
-	//comm_after_zc.word = expected_zc.word + ADVANCE_COUNT;
+	zc_count = EXPECT_ZC_COUNT;
 
 	/* Initial RPM */
 	TMR1_comm_time.word = startup_rpm;
+
+	/* expected_zc is negative expected time remaining at zero cross event */
+	expected_zc.word = UDIV2( TMR1_comm_time.word );
+
+	/* Setup commutation timing */
+	zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
+	comm_after_zc.word = expected_zc.word;
 
 	/* startup duty cycle; It is already normalized to MAX_DUTY_CYCLE */
 	SetCCPVal( STARTUP_DUTY_CYCLE );
@@ -1213,7 +1228,7 @@ then new data to server should be place in the SSPBUF for next SSPIF.
 					SPI_State = PARAM11;
 					break;
 				case SPI_GET_SPEED:
-					RetParam.word = ReadCurrentRPM();
+					RetParam.word = (uint16_t)(ReadCurrentRPM());
 					if( ReverseDirection == 1 ) /* Reverse direction? then negative rpm */
 						RetParam.word = (~(RetParam.word)) + 1;
 					SSPBUF = RetParam.bytes.high;

@@ -149,7 +149,7 @@
  * TIMER1 based
  ******************************************************/
 #define TMR1_FREQUENCY              (SYSTEM_FREQUENCY/TMR1_PRESCALE)
-#define MICROSECONDS_PER_SECOND     1000000L
+#define MICROSECONDS_PER_SECOND     1000000UL
 #define TMR1_COUNTS_PER_us          (TMR1_FREQUENCY/MICROSECONDS_PER_SECOND)
 #define TMR1_COUNTS_PER_SEC         TMR1_FREQUENCY
 
@@ -407,22 +407,22 @@
 #define SS_PIN				RA5
 
 /* SPI Command code */
-#define SPI_COMMAND_MASK	0b11100000
-#define SPI_PARAM_MASK		0b00011111
+#define SPI_COMMAND_MASK	0b11100000U
+#define SPI_PARAM_MASK		0b00011111U
 
-#define SPI_SET_CURRENT		0b11100000
-#define SPI_SET_SPEED		0b11000000
-#define SPI_GET_SPEED		0b10100000
-#define SPI_NOP				0b10000000
+#define SPI_SET_CURRENT		0b11100000U
+#define SPI_SET_SPEED		0b11000000U
+#define SPI_GET_SPEED		0b10100000U
+#define SPI_NOP				0b10000000U
 
 /* Undocumented commands */
-#define SPI_UNDOC_MASK		0b00011100
-#define SPI_UNDOC_PARAM_MASK 0b00000011
-#define SPI_UNDOC_SPEED_M	0b00000100
-#define SPI_UNDOC_PWM_M		0b00001000
-#define SPI_UNDOC_SET_PWM	0b00001100
-#define SPI_UNDOC_GET_PWM	0b00010000
-#define SPI_UNDOC_REVERSE	0b00010100
+#define SPI_UNDOC_MASK		0b00011100U
+#define SPI_UNDOC_PARAM_MASK 0b00000011U
+#define SPI_UNDOC_SPEED_M	0b00000100U
+#define SPI_UNDOC_PWM_M		0b00001000U
+#define SPI_UNDOC_SET_PWM	0b00001100U
+#define SPI_UNDOC_GET_PWM	0b00010000U
+#define SPI_UNDOC_REVERSE	0b00010100U
 /*-----------------------------------------------------------*/
 
 /******************************************************
