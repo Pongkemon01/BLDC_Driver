@@ -386,6 +386,9 @@ static doublebyte temp_comm_time, temp_zc;
 					*/
 					/* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
 					TMR1_comm_time.word -= (uint16_t)(zc_error>>ERROR_SCALE);
+					/* Limit zc to TMR1_comm_time */
+					if( zc.word < TMR1_comm_time.word )
+						zc.word = TMR1_comm_time.word;
 					temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
 
 					/* setup for commutation */

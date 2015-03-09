@@ -128,7 +128,7 @@
 // time for continuous unstable condition to cause stall
 // TIMER0_STALL_ms = number of milliseconds in out-of-lock condition to recognize stall
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMER0_STALL_ms               2500
+#define  TIMER0_STALL_ms               2000
                                           
 // number of milliseconds between each motor stall condition check
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
