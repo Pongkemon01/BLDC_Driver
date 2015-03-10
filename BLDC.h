@@ -176,13 +176,15 @@
 #define TIMER2_FREQUENCY       (SYSTEM_FREQUENCY/TIMER2_PRESCALE)
 
 #ifdef  HIGHSPEED_PWM
-    // 1/20KHz = 50µS PWM period @ 0.5 us Timer2 period
+    // 1/31.25KHz = 32µS PWM period @ 0.125 us Timer2 period
     #define PWM_FREQ            31250L
 #else
+// 1/12.5KHz = 80µS PWM period @ 0.5 us Timer2 period
+#define PWM_FREQ          12500L
 // 1/16KHz = 62.5µS PWM period @ 0.5 us Timer2 period
-//#define PWM_FREQUENCY          16000L
+//#define PWM_FREQ          16000L
 // 1/20KHz = 50µS PWM period @ 0.5 us Timer2 period
-#define PWM_FREQ               20000L
+//#define PWM_FREQ               20000L
 #endif
 
 #define PWM_PERIOD             (((TIMER2_FREQUENCY/PWM_FREQ)-1L)&0xFF)   
