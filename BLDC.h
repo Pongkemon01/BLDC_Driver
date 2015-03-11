@@ -189,8 +189,6 @@
 
 #define PWM_PERIOD             (((TIMER2_FREQUENCY/PWM_FREQ)-1L)&0xFF)   
 
- // Stall event trigger
-#define MAX_TMR1_PRESET        (~MIN_COMM_TIME)
 /*-----------------------------------------------------------*/
 
 /* ECCP */
@@ -442,6 +440,40 @@
 #define LED_OVERCURRENT_MASK	0b00100000
 #define LED_OVERTEMP_MASK		0b00010000
 #define LED_OK_MASK				0b10000000
+
+/* Divide-by-2 for uint16_t that acting like int16_t (preserve the sign bit) */
+#define UDIV2(x)	( ( x>>1 ) | 0x8000 )
+/* 2'Complement negative */
+#define UNEG(x)		( ( ~(x) ) + 1 )
+/******************************************************
+ * Unions and Structures
+ ******************************************************/
+
+typedef union {
+   uint16_t word;
+   struct {
+	  uint8_t low;
+	  uint8_t high;
+   }bytes;
+} doublebyte;
+/*-----------------------------------------------------------*/
+/* Variables and prototypes from commutation state */
+/* Variables for BLDC state machine */
+extern enum BLDC_State_t
+{
+	STOP=0,	/* Motor stops. All ports+PWM are idle */
+	SETUP,	/* Setting up motor parameters for start */
+	EXCITE,	/* Excite motor twice to hold the start position */
+	RAMPUP,	/* Speed-up motor until BEMF can be detected */
+	COMMUTE, /* Normal running with BEMF */
+	RAMPDOWN, /* All ports+PWM are idle. Motor run freely */
+	BREAK,	/* All PWM are idle. All excitation ports are on to break motor */
+	COOLDN	/* All ports+PWM are idle. Wait for all signal to cooldown */
+}BLDC_State;
+extern bit bemf_flag;
+extern bit ReverseDirection;
+extern uint8_t TMR0_stall_timer;
+extern void Commutate(void);
 
 
 /******************************************************
