@@ -41,6 +41,12 @@ doublebyte zc;
 doublebyte expected_zc;
 doublebyte comm_after_zc;
 
+/* Timer counters for startup */
+uint8_t TMR0_excite_timer;
+
+/* Sub-state */
+uint8_t excite_events;
+
 /*---------------------------------------------------------------------------*/
 
 /* Prototype */
@@ -140,7 +146,7 @@ static doublebyte temp_comm_time, temp_zc;
 				{
 					/* TMR1_comm_time is negative so adding negative number
 					lengthens comm time. shorten by 1/8 commutation cycle */
-					TMR1_comm_time.word += (expected_zc.word>>2);
+					TMR1_comm_time.word -= (expected_zc.word>>2);
 				}
 				/* No "break" statement here. We follow through
 				"commutate" state to process timer1 interrupt. */
@@ -321,9 +327,7 @@ static doublebyte temp_comm_time, temp_zc;
 *                                                                       *
 *      Function:       CommLoop_Setup                                   *
 *                                                                       *
-*      Description:    Initializing variables used in closed-loop BEMF  *
-*                      commutation control. Usually called after finish *
-*                      BLDC excitation procedure.                       *
+*      Description:    Initializing BLDC for alignment process.         *
 *                                                                       *
 *      Parameters:                                                      *
 *      Return value:                                                    *
@@ -334,23 +338,76 @@ static doublebyte temp_comm_time, temp_zc;
 
 void CommLoop_Setup()
 {
-	zc_count = EXPECT_ZC_COUNT;
+	TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
 
-	/* Initial RPM */
-	TMR1_comm_time.word = startup_rpm;
+	/* Setup Sub-states */
+	excite_events = EXCITE_STEPS;
 
-	/* expected_zc is negative expected time remaining at zero cross event */
-	expected_zc.word = UDIV2( TMR1_comm_time.word );
+	/* Start the first move */
+	comm_state=1;
+	Commutate();
+}
+/*---------------------------------------------------------------------------*/
 
-	/* Setup commutation timing */
-	zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
-	comm_after_zc.word = expected_zc.word;
+/************************************************************************
+*                                                                       *
+*      Function:       CommLoop_Align                                   *
+*                                                                       *
+*      Description:    Align BLDC rotor to a predefined position.       *
+*                                                                       *
+*      Parameters:                                                      *
+*      Return value:   0 - BLDC does not finish alignment yet.          *
+*                      1 - BLDC finished alignment and ready for the    *
+*                          next state.                                  *
+*                                                                       *
+*      Note:                                                            *
+*                                                                       *
+*************************************************************************/
 
-	TMR1H = TMR1_comm_time.bytes.high;
-	TMR1L = TMR1_comm_time.bytes.low;
-	isr_state = commutate;
-	TMR1ON = 1;
-	TMR1IE = 1;
+uint8_t CommLoop_Align(void) /* Excitation phase */
+{
+	/* The excitation timer determines how long to dwell at each slow
+	 start commutation point. */
+	--TMR0_excite_timer;
+	if( TMR0_excite_timer == 0 )
+	{
+		/* when slow start is complete change to the startup timer
+		   which determines how long to ramp-up at fixed commutations
+		   the ramp-up is terminated early when the first zero cross
+		   is detected. */
+		--excite_events;
+		if( excite_events == 0 )
+		{
+			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
+			zc_count = EXPECT_ZC_COUNT;
+
+			/* Initial RPM */
+			TMR1_comm_time.word = startup_rpm;
+
+			/* expected_zc is negative expected time remaining at zero cross event */
+			expected_zc.word = UDIV2( TMR1_comm_time.word );
+
+			/* Setup commutation timing */
+			zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
+			comm_after_zc.word = expected_zc.word;
+
+			TMR1H = TMR1_comm_time.bytes.high;
+			TMR1L = TMR1_comm_time.bytes.low;
+			isr_state = commutate;
+			TMR1ON = 1;
+			TMR1IE = 1;
+			PEIE=1;
+			GIE=1;
+			return(1);
+		}
+		else
+		{
+			/* reset the dwell timer for the next step */
+			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
+			Commutate();
+		}
+	}
+	return(0);
 }
 /*---------------------------------------------------------------------------*/
 
@@ -362,15 +419,18 @@ void CommLoop_Setup()
 *                      that closed-loop commutation could be performed. *
 *                                                                       *
 *      Parameters:                                                      *
-*      Return value:                                                    *
+*      Return value:   0 - BLDC does not finish ramp-up yet.            *
+*                      1 - BLDC finished ramp-up and ready for the next *
+*                          state.                                       *
 *                                                                       *
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
 
-void CommLoop_Start() /* Ramp up */
+uint8_t CommLoop_Start() /* Ramp up */
 {
 	/* AN1305 does nothing in ramp up */
+	return(0);	/* Always not finished */
 }
 /*---------------------------------------------------------------------------*/
 

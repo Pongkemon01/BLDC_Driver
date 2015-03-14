@@ -475,6 +475,22 @@ extern bit ReverseDirection;
 extern uint8_t TMR0_stall_timer;
 extern void Commutate(void);
 
+/* Commutation state according to electric current path
+         A
+         |
+         |
+        / \
+       /   \
+      B     C
+
+State 1 : A -> B
+State 2 : A -> C
+State 3 : B -> C
+State 4 : B -> A
+State 5 : C -> A
+State 6 : C -> B
+*/
+extern uint8_t comm_state;
 
 /******************************************************
  * BLDC Motor definitions

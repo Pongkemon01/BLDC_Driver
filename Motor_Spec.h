@@ -104,7 +104,7 @@ time with this value will give the RPM.
 // number of slow commutations between warmup and startup                                          
 #define EXCITE_STEPS                  2
 
-#define EXPECT_ZC_COUNT                 3
+#define EXPECT_ZC_COUNT                 4
 
 // blanking count in microseconds
 #define BLANKING_COUNT_us		      100U

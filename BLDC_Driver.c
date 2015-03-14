@@ -67,16 +67,12 @@ bit ReverseDirection;
 enum BLDC_State_t BLDC_State;
 
 /* Timer for each state */
-uint8_t TMR0_excite_timer;
 uint8_t TMR0_rampup_timer;
 uint8_t TMR0_rampdown_timer;
 uint8_t TMR0_break_timer;
 uint8_t TMR0_cooldn_timer;
 uint8_t TMR0_stallcheck_timer;
 uint8_t TMR0_stall_timer;
-
-/* Sub-state */
-uint8_t excite_events;
 
 /*---------------------------------------------------------------------------*/
 
@@ -329,9 +325,11 @@ void BLDC_Setup( void )
 
 	/* Disable current limiting during start up*/
 	CCP1AS = 0;
+	
+	/* Setup commutation scheme */
+	CommLoop_Setup();
 
 	/* Setup TimeBase parameters */
-	TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
 	TMR0_rampup_timer = TIMEBASE_RAMPUP_COUNT;
 	TMR0_rampdown_timer = TIMEBASE_RAMPDOWN_COUNT;
 	TMR0_break_timer = TIMEBASE_BREAK_COUNT;
@@ -339,16 +337,9 @@ void BLDC_Setup( void )
 	TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
 	TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 
-	/* Setup Sub-states */
-	excite_events = EXCITE_STEPS;
-
 	/* startup duty cycle; It is already normalized to MAX_DUTY_CYCLE */
 	SetCCPVal( STARTUP_DUTY_CYCLE );
 	CCP1CON = CCP1CON_INIT;           /* PWM on */
-
-	/* Start the first move */
-	comm_state=1;
-	Commutate();
 
 	BLDC_State = EXCITE;
 }
@@ -375,31 +366,8 @@ void BLDC_Excite( void )
 {
 	if( BLDC_State != EXCITE ) return;
 
-	/* The excitation timer determines how long to dwell at each slow
-	 start commutation point. */
-	--TMR0_excite_timer;
-	if( TMR0_excite_timer == 0 )
-	{
-		/* when slow start is complete change to the startup timer
-		   which determines how long to ramp-up at fixed commutations
-		   the ramp-up is terminated early when the first zero cross
-		   is detected. */
-		--excite_events;
-		if( excite_events == 0 )
-		{
-			BLDC_State = RAMPUP;
-			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
-			CommLoop_Setup();
-			PEIE=1;
-			GIE=1;
-		}
-		else
-		{
-			/* reset the dwell timer for the next step */
-			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
-			Commutate();
-		}
-	}
+	if( ( CommLoop_Align() ) == 1)
+		BLDC_State = RAMPUP;
 }
 /*---------------------------------------------------------------------------*/
 
@@ -427,7 +395,7 @@ void BLDC_Rampup( void )
 {
 	if( BLDC_State != RAMPUP ) return;
 
-	CommLoop_Start();	/* Ramp-up procedure */
+	(void)CommLoop_Start();	/* Ramp-up procedure */
 	--TMR0_rampup_timer;
 	if( TMR0_rampup_timer == 0 )
 	{
