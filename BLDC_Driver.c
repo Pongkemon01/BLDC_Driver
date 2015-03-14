@@ -395,7 +395,7 @@ void BLDC_Rampup( void )
 {
 	if( BLDC_State != RAMPUP ) return;
 
-	(void)CommLoop_Start();	/* Ramp-up procedure */
+	CommLoop_Start();	/* Ramp-up procedure */
 	--TMR0_rampup_timer;
 	if( TMR0_rampup_timer == 0 )
 	{

@@ -419,18 +419,15 @@ uint8_t CommLoop_Align(void) /* Excitation phase */
 *                      that closed-loop commutation could be performed. *
 *                                                                       *
 *      Parameters:                                                      *
-*      Return value:   0 - BLDC does not finish ramp-up yet.            *
-*                      1 - BLDC finished ramp-up and ready for the next *
-*                          state.                                       *
+*      Return value:                                                    *
 *                                                                       *
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
 
-uint8_t CommLoop_Start() /* Ramp up */
+void CommLoop_Start() /* Ramp up */
 {
 	/* AN1305 does nothing in ramp up */
-	return(0);	/* Always not finished */
 }
 /*---------------------------------------------------------------------------*/
 
