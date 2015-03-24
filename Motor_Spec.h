@@ -47,7 +47,7 @@
 /* start speed in electrical RPM. However, since timer register is a
  * 16-bit register counting at 1MHz, counting for 1 round can manage
  * the speed at the minimum rate of 160RPM(elec) */
-#define START_RPM               200L
+#define START_RPM               300L
 
 // STARTUP_DRIVE_PCT = determines initial CCPR1L duty cycle from speed table for motor startup
 // NOTE: A CCPR1L number that seems to work best for all applications is 13%
@@ -104,7 +104,7 @@ time with this value will give the RPM.
 // number of slow commutations between warmup and startup                                          
 #define EXCITE_STEPS                  2
 
-#define EXPECT_ZC_COUNT                 4
+#define EXPECT_ZC_COUNT                 3
 
 // blanking count in microseconds
 #define BLANKING_COUNT_us		      100U

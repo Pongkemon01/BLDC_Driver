@@ -473,6 +473,7 @@ extern enum BLDC_State_t
 extern bit bemf_flag;
 extern bit ReverseDirection;
 extern uint8_t TMR0_stall_timer;
+extern void SetCCPVal( uint16_t Duty );
 extern void Commutate(void);
 
 /* Commutation state according to electric current path

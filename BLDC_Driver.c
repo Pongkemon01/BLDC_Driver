@@ -326,9 +326,6 @@ void BLDC_Setup( void )
 	/* Disable current limiting during start up*/
 	CCP1AS = 0;
 	
-	/* Setup commutation scheme */
-	CommLoop_Setup();
-
 	/* Setup TimeBase parameters */
 	TMR0_rampup_timer = TIMEBASE_RAMPUP_COUNT;
 	TMR0_rampdown_timer = TIMEBASE_RAMPDOWN_COUNT;
@@ -337,9 +334,8 @@ void BLDC_Setup( void )
 	TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
 	TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 
-	/* startup duty cycle; It is already normalized to MAX_DUTY_CYCLE */
-	SetCCPVal( STARTUP_DUTY_CYCLE );
-	CCP1CON = CCP1CON_INIT;           /* PWM on */
+	/* Setup commutation scheme */
+	CommLoop_Setup();
 
 	BLDC_State = EXCITE;
 }
@@ -1229,6 +1225,8 @@ void CheckOverCurrent( void )
 	/* Check for over-current */
 	if( OC_STAT == 1 )
 		LED_OVERCURRENT = 1;
+	else
+		LED_OVERCURRENT = 0;
 }
 /*---------------------------------------------------------------------------*/
 
@@ -1318,15 +1316,16 @@ void main( void )
                 i++;
                 if(i == 200)
                 {
-                    BLDC_State = SETUP;
-                    desired_speed = 6000;
+                	//ReverseDirection = 1;
+                    //BLDC_State = SETUP;
+                    desired_speed = -6000;
                 }
 			/* This block is executed every 10ms */
 			CheckOverTemp();
-			//if( BLDC_Mode == SPEED_MODE )
-			//	SpeedManager();
-			//else
-			//	PwmManager();
+			if( BLDC_Mode == SPEED_MODE )
+				SpeedManager();
+			else
+				PwmManager();
 			BLDC_Machine();
 		}
 	}
