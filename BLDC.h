@@ -134,6 +134,11 @@
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
 #define  TIMEBASE_STALLCHECK_ms        500
 
+/* number of milliseconds that allow for over-current condition.
+	If over-current cannot be cleared within this period, BLDC driver will
+	perform shutting down procedure. */
+#define  TIMEBASE_OVERCURRENT_ms		2000
+
 /******************************************************
  * TIMEBASE times converted to counts
  ******************************************************/
@@ -144,6 +149,7 @@
 #define TIMEBASE_COOLDN_COUNT		(TIMEBASE_COOLDN_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_STALL_COUNT		(TIMER0_STALL_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_STALLCHECK_COUNT	(TIMEBASE_STALLCHECK_ms/TIMEBASE_MS_PER_COUNT)
+#define TIMEBASE_OVERCURRENT_COUNT	(TIMEBASE_OVERCURRENT_ms/TIMEBASE_MS_PER_COUNT)
 
 /******************************************************
  * TIMER1 based
@@ -322,9 +328,10 @@
 #define FVRCON_INIT		0b11111000	/* Out 2.048V to DAC. Also turn-on temperature sensor */
 #define DACCON0_INIT	0b11001000	/* Use FVR as ref+ and GND as ref- */
 #define DAC_5A                  8
+#define DAC_10A			16			/* DAC value for 10A */
 #define DAC_12A			20			/* DAC value for 12A */
 #define DAC_14A			23			/* DAC value for 14A */
-#define DAC_DEFAULT_CURRENT	DAC_14A
+#define DAC_DEFAULT_CURRENT	DAC_10A
 
 /******************************************************
  * ADC

@@ -73,6 +73,7 @@ uint8_t TMR0_break_timer;
 uint8_t TMR0_cooldn_timer;
 uint8_t TMR0_stallcheck_timer;
 uint8_t TMR0_stall_timer;
+uint8_t TMR0_overcurrent_timer;
 
 /*---------------------------------------------------------------------------*/
 
@@ -333,6 +334,7 @@ void BLDC_Setup( void )
 	TMR0_cooldn_timer = TIMEBASE_COOLDN_COUNT;
 	TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
 	TMR0_stall_timer = TIMEBASE_STALL_COUNT;
+	TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
 
 	/* Setup commutation scheme */
 	CommLoop_Setup();
@@ -1222,11 +1224,22 @@ void SpeedManager(void)
 *************************************************************************/
 void CheckOverCurrent( void )
 {
+	static uint8_t oc_monostable;
+	
 	/* Check for over-current */
 	if( OC_STAT == 1 )
+	{
+		oc_monostable = 250;
 		LED_OVERCURRENT = 1;
+	}
 	else
-		LED_OVERCURRENT = 0;
+	{
+		TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
+		if( oc_monostable != 0)
+			oc_monostable--;
+		else
+			LED_OVERCURRENT = 0;
+	}
 }
 /*---------------------------------------------------------------------------*/
 
@@ -1313,14 +1326,26 @@ void main( void )
 
 	    if( TimeBaseManager() == 1 ) /* Return 1 every 10ms */
 		{
-                i++;
-                if(i == 200)
-                {
+			/* This block is executed every 10ms */
+
+            i++;
+                //if(i == 200)
+                //{
                 	//ReverseDirection = 1;
                     //BLDC_State = SETUP;
-                    desired_speed = -6000;
-                }
-			/* This block is executed every 10ms */
+                //    desired_speed = -6000;
+                //}
+
+            /* decrease over-current timer. This timer will be reset inside
+            over-current checking procedure */
+            if( TMR0_overcurrent_timer != 0 )
+	            TMR0_overcurrent_timer--;
+	        else
+	        {
+	        	/* Time-out!!! over-current is too long. shutdown motor */
+	        	desired_speed = 0;
+	        	BLDC_State = RAMPDOWN;
+	        }
 			CheckOverTemp();
 			if( BLDC_Mode == SPEED_MODE )
 				SpeedManager();
