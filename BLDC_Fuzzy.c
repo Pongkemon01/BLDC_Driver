@@ -1,9 +1,21 @@
 /* BLDC_Fuzzy.c */
-#define MEMBERSHIP_FUNCTION_MAX		5
-#define FUZZY_MEMBER_MIN		(-50)
-#define FUZZY_MEMBER_MAX		50
-#define FUZZY_DEGREE_MAX		250U
-#define FUZZY_MEMBER_HALF_BASE	25U
+//#define MEMBERSHIP_FUNCTION_MAX		5
+#define MEMBERSHIP_FUNCTION_MAX		7
+
+#if (MEMBERSHIP_FUNCTION_MAX == 5 )
+	#define FUZZY_MEMBER_MIN		(-50)
+	#define FUZZY_MEMBER_MAX		50
+	#define FUZZY_DEGREE_MAX		250U
+	#define FUZZY_MEMBER_HALF_BASE	25U
+#elif (MEMBERSHIP_FUNCTION_MAX == 7 )
+	#define FUZZY_MEMBER_MIN		(-45)
+	#define FUZZY_MEMBER_MAX		45
+	#define FUZZY_DEGREE_MAX		225U
+	#define FUZZY_MEMBER_HALF_BASE	15U
+#else
+#error "Unsupport number of membeship function
+#endif
+
 #define FUZZY_SLOPE_POSITIVE	( FUZZY_DEGREE_MAX / FUZZY_MEMBER_HALF_BASE )
 typedef struct
 {
@@ -126,11 +138,21 @@ void Fuzzify( int16_t crisp, FuzzyDegree_t *fuzzy )
 *                                                                       *
 *************************************************************************/
 const uint8_t FuzzyRules[MEMBERSHIP_FUNCTION_MAX][MEMBERSHIP_FUNCTION_MAX] =
+#if (MEMBERSHIP_FUNCTION_MAX == 5)
 { { 0, 0, 1, 1, 2 },
   { 0, 1, 1, 2, 3 },
   { 1, 1, 2, 3, 3 },
   { 1, 2, 3, 3, 4 },
   { 2, 3, 3, 4, 4 } };
+#elif (MEMBERSHIP_FUNCTION_MAX == 7)
+{ { 0, 0, 0, 0, 1, 2, 3 },
+  { 0, 0, 0, 1, 2, 3, 4 },
+  { 0, 0, 1, 2, 3, 4, 5 },
+  { 0, 1, 2, 3, 4, 5, 6 },
+  { 1, 2, 3, 4, 5, 6, 6 },
+  { 2, 3, 4, 5, 6, 6, 6 },
+  { 3, 4, 5, 6, 6, 6, 6 } };
+#endif
 void Inference( void )
 {
 	uint8_t	i, in_index1, in_index2, out_index, infer_degree;
