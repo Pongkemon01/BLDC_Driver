@@ -106,6 +106,8 @@ time with this value will give the RPM.
 
 #define EXPECT_ZC_COUNT                 3
 
+#define MAX_OVERCURRENT_RST			2
+
 // blanking count in microseconds
 #define BLANKING_COUNT_us		      100U
 #define BLANKING_COUNT              (BLANKING_COUNT_us * TMR1_COUNTS_PER_us)

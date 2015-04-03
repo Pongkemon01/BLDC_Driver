@@ -104,10 +104,12 @@
  ******************************************************/
 
 // all TIMEBASE times must be expressed in even multiples of TIMEBASE_MS_PER_COUNT
+// Be carefull, each variable is kept in an 8-bit storage. Setting value greater
+// than 2550 milliseconds (10ms timer period) is considered overflow.
 
 // TIMEBASE_STARTUP_ms = number of milliseconds allowed to achieve zero-cross lock
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMEBASE_EXCITE_ms           30
+#define  TIMEBASE_EXCITE_ms           20
 
 // TIMEBASE_RAMPUP_ms = number of milliseconds allowed to achieve zero-cross lock
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
@@ -137,7 +139,10 @@
 /* number of milliseconds that allow for over-current condition.
 	If over-current cannot be cleared within this period, BLDC driver will
 	perform shutting down procedure. */
-#define  TIMEBASE_OVERCURRENT_ms		2000
+#define  TIMEBASE_OVERCURRENT_ms		1000
+
+/* Time constant for monostable of over-current event */
+#define  TIMEBASE_OC_DELAY_ms			100
 
 /******************************************************
  * TIMEBASE times converted to counts
@@ -150,6 +155,7 @@
 #define TIMEBASE_STALL_COUNT		(TIMER0_STALL_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_STALLCHECK_COUNT	(TIMEBASE_STALLCHECK_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_OVERCURRENT_COUNT	(TIMEBASE_OVERCURRENT_ms/TIMEBASE_MS_PER_COUNT)
+#define TIMEBASE_OC_DELAY_COUNT		(TIMEBASE_OC_DELAY_ms/TIMEBASE_MS_PER_COUNT)
 
 /******************************************************
  * TIMER1 based
@@ -314,11 +320,11 @@
 /* Comparator initializations */
 
 /* BEMF comparator initialization */
-#define  CMxCON0_INIT         CxON | CxOE | CxFAST
+#define  CMxCON0_INIT         CxON | CxOE | CxFAST | CxHYST
 #define  CMxCON1_INIT         SENSE_V_RISING
 
 /* Overcurrent sense comparator initialization */
-#define CMyCON0_INIT    CxON | CxFAST | CxINV 
+#define CMyCON0_INIT    CxON | CxFAST | CxINV | CxHYST
 #define CMyCON1_INIT	CxINTP | CxCDAC | CxIN3     
 
 /*-----------------------------------------------------------*/
@@ -450,7 +456,7 @@
 
 /* Divide-by-2 for uint16_t that acting like int16_t (preserve the sign bit) */
 #define UDIV2(x)	( ( x>>1 ) | 0x8000 )
-/* 2'Complement negative */
+/* 2'Complement */
 #define UNEG(x)		( ( ~(x) ) + 1 )
 /******************************************************
  * Unions and Structures

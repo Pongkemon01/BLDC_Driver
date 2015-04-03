@@ -132,6 +132,8 @@ static doublebyte temp_comm_time, temp_zc;
 					TMR1L = comm_after_zc.bytes.low;
 					TMR1ON = 1;
 				}
+				/* After a successful zc detection, the next state should
+				be open-loop commutation */
 				isr_state = commutate;
 				break;
 			}
@@ -141,20 +143,19 @@ static doublebyte temp_comm_time, temp_zc;
 				If execution reaches this point then a Timer1 interrupt
 				occurred before zero-crossing was detected. This should only
 				happen during deceleration and acceleration when searching for
-				zero cross in forced commutation. */
-
-				/* if we're decelerating then adjust the commutation time to
-				catch up with the motor */
+				zero cross in forced commutation. we adjust the commutation
+				time to catch up with the motor */
 				zc_count = EXPECT_ZC_COUNT;
 				if(BLDC_State == COMMUTE)
 				{
-                    //LED_OVERTEMP = 1;
 					/* TMR1_comm_time is negative so adding negative number
-					lengthens comm time. shorten by 1/8 commutation cycle */
-					TMR1_comm_time.word -= (expected_zc.word>>3);
+					lengthens comm time. (lengthen by 1/8 commutation cycle) */
+					TMR1_comm_time.word -= (expected_zc.word>>4);
 				}
 				/* No "break" statement here. We follow through
-				"commutate" state to process timer1 interrupt. */
+				"commutate" state to process timer1 interrupt. The next
+				active state, "commutate" or "zero_detect", will be determined 
+				by an "if" statement within "commutate" state */
 			}
 
 		case commutate:

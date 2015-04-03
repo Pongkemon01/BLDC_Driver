@@ -51,7 +51,7 @@
 
 /******************* Project includes and definition *********************/
 #include "BLDC.h"
-#include "comm_loop_an1305.h"
+#include "comm_loop_new.h"
 
 /******************************************************************************
 * variable definitions. Use static-global to save time to create auto var.    *
@@ -74,6 +74,7 @@ uint8_t TMR0_cooldn_timer;
 uint8_t TMR0_stallcheck_timer;
 uint8_t TMR0_stall_timer;
 uint8_t TMR0_overcurrent_timer;
+uint8_t TMR0_oc_monostable_timer;
 
 /*---------------------------------------------------------------------------*/
 
@@ -94,6 +95,7 @@ uint16_t desired_pwm = 0; /* PWM value in 10-bit format (used in PWM mode) */
 
 /* Variable for main and miscellaneous functions */
 uint8_t timebase_10ms;
+uint8_t oc_restart_count;
 
 uint16_t pwm_current;
 uint16_t pi_blank;
@@ -334,8 +336,7 @@ void BLDC_Setup( void )
 	TMR0_cooldn_timer = TIMEBASE_COOLDN_COUNT;
 	TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
 	TMR0_stall_timer = TIMEBASE_STALL_COUNT;
-	TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
-
+	
 	/* Setup commutation scheme */
 	CommLoop_Setup();
 
@@ -641,11 +642,11 @@ void BLDC_Machine( void )
 *                                                                       *
 *************************************************************************/
 
-int16_t ReadCurrentRPM( void )
+uint16_t ReadCurrentRPM( void )
 {
-	int16_t rpm;
+	uint16_t rpm;
 
-	rpm = (int16_t)( ( (int32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( int32_t )comm_time ) );
+	rpm = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( uint32_t )comm_time ) );
 	return( rpm );
 }
 /*---------------------------------------------------------------------------*/
@@ -755,6 +756,7 @@ void ProcessSPIParam( void )
 		case SPI_SET_SPEED:
 			LED_OVERCURRENT = 0;
 			desired_speed = ( int16_t )( InpParam.word );
+			oc_restart_count = MAX_OVERCURRENT_RST;
 			break;
 			
 		case SPI_NOP:
@@ -1137,7 +1139,12 @@ void PwmManager(void)
 *************************************************************************/
 void SpeedManager(void)
 {
-	int16_t speed_error, delta_error, delta_pwm, temp_pwm;
+static uint16_t rpm_log[8];
+static uint8_t rpm_log_idx;
+
+	uint32_t rpm_sum;
+	uint8_t c;
+	int16_t speed_error, delta_error, delta_pwm, temp_pwm, avg_speed;
 	
 	if( BLDC_Mode != SPEED_MODE ) return; /* Operate only in speed mode */
 
@@ -1146,7 +1153,12 @@ void SpeedManager(void)
 		/* Blank time after enter COMMUTE state. We should hesitate to perform
 		PWM control because the newly-entered COMMUTE state may be still
 		unstable */
-		if(pi_blank < 10)
+		
+		rpm_log[rpm_log_idx] = ReadCurrentRPM();
+		rpm_log_idx++;
+		rpm_log_idx &= 0x7;
+		
+		if(pi_blank < 16)
 		{
 			pi_blank++;
 			return;
@@ -1160,10 +1172,16 @@ void SpeedManager(void)
 			BLDC_State = RAMPDOWN;
 			return;
 		}
+		
+		rpm_sum = 0;
+		for( c = 0; c < 8; c++ )
+			rpm_sum += ( uint32_t )( rpm_log[c] );
+		avg_speed = ( uint16_t )( rpm_sum >> 3 );
+		
 		if( desired_speed > 0)
-			speed_error = desired_speed - ( ReadCurrentRPM() );
+			speed_error = desired_speed - ( int16_t )avg_speed;
 		else
-			speed_error = ( -desired_speed ) - ( ReadCurrentRPM() );
+			speed_error = ( -desired_speed ) - ( int16_t )avg_speed;
 
 		delta_error = speed_error - speed_error_prev;
 
@@ -1193,6 +1211,7 @@ void SpeedManager(void)
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
 		pi_blank = 0;
+		rpm_log_idx = 0;
 		speed_error_prev = 0;
 		pwm_current = STARTUP_DUTY_CYCLE;
 
@@ -1224,21 +1243,12 @@ void SpeedManager(void)
 *************************************************************************/
 void CheckOverCurrent( void )
 {
-	static uint8_t oc_monostable;
-	
-	/* Check for over-current */
+	/* Check for over-current. Over-current status will be cleared by
+	monostable operation in Main */
 	if( OC_STAT == 1 )
 	{
-		oc_monostable = 250;
+		TMR0_oc_monostable_timer = TIMEBASE_OC_DELAY_COUNT;
 		LED_OVERCURRENT = 1;
-	}
-	else
-	{
-		TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
-		if( oc_monostable != 0)
-			oc_monostable--;
-		else
-			LED_OVERCURRENT = 0;
 	}
 }
 /*---------------------------------------------------------------------------*/
@@ -1281,6 +1291,7 @@ void CheckOverTemp( void )
 void main( void )
 {
     uint16_t i = 0;
+    
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	ReverseDirection = 0;
 	desired_speed = 0;
@@ -1289,6 +1300,9 @@ void main( void )
 	SPI_State = IDLE;
 	BLDC_State = STOP;
 	BLDC_Mode = SPEED_MODE;
+	oc_restart_count = MAX_OVERCURRENT_RST;
+	TMR0_oc_monostable_timer = 0;
+	TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
 
 	InitSystem();
 
@@ -1327,26 +1341,48 @@ void main( void )
 	    if( TimeBaseManager() == 1 ) /* Return 1 every 10ms */
 		{
 			/* This block is executed every 10ms */
+			
+			/* Over-current protection */
+			if( TMR0_oc_monostable_timer != 0 )
+				TMR0_oc_monostable_timer--;
 
+			/* After decrement, if monostable is out, 
+			clear over-current status */
+			if( TMR0_oc_monostable_timer == 0 )
+			{
+				TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
+				LED_OVERCURRENT = 0;
+			}
+			else
+			{
+				/* Otherwise, count the timeout */
+	            if( TMR0_overcurrent_timer != 0 )
+		            TMR0_overcurrent_timer--;
+				
+				/* If time is up, shutdown/restart BLDC. The counter for
+				restarting the BLDC will be reset when a new speed-set
+				command is received from SPI */
+				if( TMR0_overcurrent_timer == 0 )
+	        	{
+	        		LED_OVERTEMP = 1;	
+		        	if( oc_restart_count != 0 )
+		        		oc_restart_count--;
+		        	else	
+		    	    	desired_speed = 0;
+	        		BLDC_State = RAMPDOWN;
+	        	}
+			}
+
+			/* DEBUG */
             i++;
-                //if(i == 200)
-                //{
-                	//ReverseDirection = 1;
-                    //BLDC_State = SETUP;
-                //    desired_speed = -6000;
-                //}
+            if(i == 200)
+            {
+                //ReverseDirection = 1;
+                //BLDC_State = SETUP;
+                desired_speed = 6000;
+            }
 
-            /* decrease over-current timer. This timer will be reset inside
-            over-current checking procedure */
-            if( TMR0_overcurrent_timer != 0 )
-	            TMR0_overcurrent_timer--;
-	        else
-	        {
-	        	/* Time-out!!! over-current is too long. shutdown motor */
-	        	desired_speed = 0;
-	        	BLDC_State = RAMPDOWN;
-	        }
-			CheckOverTemp();
+			//CheckOverTemp();
 			if( BLDC_Mode == SPEED_MODE )
 				SpeedManager();
 			else
