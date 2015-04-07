@@ -31,6 +31,13 @@
 
 uint16_t startup_rpm = UNEG(COMM_TIME_INIT);
 
+/* Average backlog */
+#define AVG_BACKLOG_SIZE	( 1 << ( AVG_BACKLOG_LEN - 1 ) )
+#define AVG_BACKLOG_MASK	( AVG_BACKLOG_SIZE - 1 )
+
+uint16_t avg_backlog[AVG_BACKLOG_SIZE];
+uint8_t avg_backlog_index;
+
 /* Variables for ISR */
 enum isr_state_t{zero_detect,commutate} isr_state;
 uint8_t zc_count;
@@ -314,6 +321,12 @@ static int16_t zc_error, temp1, temp2;
 					*/
 					/* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
 					TMR1_comm_time.word -= (uint16_t)(zc_error>>ERROR_SCALE);
+					
+					/* Keep current TMR1_comm_time in backlog */
+					avg_backlog[avg_backlog_index] = UNEG(TMR1_comm_time.word);
+					avg_backlog_index++;
+					avg_backlog_index &= AVG_BACKLOG_MASK;
+										
 					/* Limit zc to TMR1_comm_time */
 					if( zc.word < TMR1_comm_time.word )
 						zc.word = TMR1_comm_time.word;
@@ -356,6 +369,31 @@ static int16_t zc_error, temp1, temp2;
 
 /************************************************************************
 *                                                                       *
+*      Function:       AvgCommTime                                      *
+*                                                                       *
+*      Description:    Average commutation time.                        *
+*                                                                       *
+*      Parameters:                                                      *
+*      Return value:                                                    *
+*                                                                       *
+*      Note:                                                            *
+*                                                                       *
+*************************************************************************/
+
+uint16_t AvgCommTime(void)
+{
+	uint32_t comm_sum;
+	uint8_t c;
+	
+	comm_sum = 0;
+	for( c = 0; c < AVG_BACKLOG_SIZE; c++ )
+		comm_sum += (uint32_t)( avg_backlog[c] );
+	return( (uint16_t)( comm_sum >> AVG_BACKLOG_LEN ) );
+}
+/*---------------------------------------------------------------------------*/
+
+/************************************************************************
+*                                                                       *
 *      Function:       CommLoop_Setup                                   *
 *                                                                       *
 *      Description:    Initializing BLDC for alignment process.         *
@@ -369,7 +407,14 @@ static int16_t zc_error, temp1, temp2;
 
 void CommLoop_Setup()
 {
+	uint8_t c;
+	
 	TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
+
+	/* Clear previous speed backlog */
+	for( c = 0 ; c < AVG_BACKLOG_SIZE ; c++ )
+		avg_backlog[c] = 0;
+	avg_backlog_index = 0;
 
 	/* Setup Sub-states */
 	excite_events = ALIGN_STEPS;

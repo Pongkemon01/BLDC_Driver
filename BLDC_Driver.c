@@ -99,7 +99,6 @@ uint8_t oc_restart_count;
 
 uint16_t pwm_current;
 uint16_t pi_blank;
-int16_t speed_error_prev;
 
 enum BLDC_Mode_t{
 	SPEED_MODE=0,	/* BLDC operates in speed-control mode */
@@ -110,7 +109,7 @@ enum BLDC_Mode_t{
 void Commutate(void);
 
 /* Include the PWM control engine */
-#include "BLDC_Fuzzy.c"
+#include "BLDC_Closed_loop.h"
 
 /************************************************************************
 *                                                                       *
@@ -461,7 +460,7 @@ void BLDC_Commute( void )
 		 Larger numbers represent shorter periods. If the algorithm sets
 		 TMR1_comm_time to a period shorter than the stall trigger point
 		 then stop the motor.*/
-		if( comm_time < (uint16_t)MIN_COMM_TIME)
+		if( comm_time() < (uint16_t)MIN_COMM_TIME)
 		{
 			/* Turn on red LED when stall */
 			LED_ERROR = 1;
@@ -646,7 +645,7 @@ uint16_t ReadCurrentRPM( void )
 {
 	uint16_t rpm;
 
-	rpm = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( uint32_t )comm_time ) );
+	rpm = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( uint32_t )comm_time() ) );
 	return( rpm );
 }
 /*---------------------------------------------------------------------------*/
@@ -1139,12 +1138,7 @@ void PwmManager(void)
 *************************************************************************/
 void SpeedManager(void)
 {
-static uint16_t rpm_log[8];
-static uint8_t rpm_log_idx;
-
-	uint32_t rpm_sum;
-	uint8_t c;
-	int16_t speed_error, delta_error, delta_pwm, temp_pwm, avg_speed;
+	int16_t speed_error, delta_pwm, temp_pwm, avg_speed;
 	
 	if( BLDC_Mode != SPEED_MODE ) return; /* Operate only in speed mode */
 
@@ -1153,10 +1147,6 @@ static uint8_t rpm_log_idx;
 		/* Blank time after enter COMMUTE state. We should hesitate to perform
 		PWM control because the newly-entered COMMUTE state may be still
 		unstable */
-		
-		rpm_log[rpm_log_idx] = ReadCurrentRPM();
-		rpm_log_idx++;
-		rpm_log_idx &= 0x7;
 		
 		if(pi_blank < 16)
 		{
@@ -1173,22 +1163,15 @@ static uint8_t rpm_log_idx;
 			return;
 		}
 		
-		rpm_sum = 0;
-		for( c = 0; c < 8; c++ )
-			rpm_sum += ( uint32_t )( rpm_log[c] );
-		avg_speed = ( uint16_t )( rpm_sum >> 3 );
-		
+		avg_speed = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( avg_comm_time() ) );		
 		if( desired_speed > 0)
 			speed_error = desired_speed - ( int16_t )avg_speed;
 		else
 			speed_error = ( -desired_speed ) - ( int16_t )avg_speed;
 
-		delta_error = speed_error - speed_error_prev;
 
 		/* Calculate PWM change using a control engine */
-		delta_pwm = PWMControlEngine( speed_error, delta_error );
-
-		speed_error_prev = speed_error;
+		delta_pwm = PWMControlEngine( speed_error );
 
 		/* if current_pwm + delta_pwm yield a negative number then an error occurs */
 		temp_pwm = ( (int16_t)pwm_current ) + delta_pwm;
@@ -1211,9 +1194,8 @@ static uint8_t rpm_log_idx;
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
 		pi_blank = 0;
-		rpm_log_idx = 0;
-		speed_error_prev = 0;
 		pwm_current = STARTUP_DUTY_CYCLE;
+		PWMControlEngineInit();
 
 		if( ( desired_speed != 0 ) && ( BLDC_State == STOP ) )
 		{
@@ -1296,7 +1278,6 @@ void main( void )
 	ReverseDirection = 0;
 	desired_speed = 0;
 	desired_pwm = 0;
-	speed_error_prev = 0;
 	SPI_State = IDLE;
 	BLDC_State = STOP;
 	BLDC_Mode = SPEED_MODE;

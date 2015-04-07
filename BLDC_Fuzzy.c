@@ -1,4 +1,6 @@
 /* BLDC_Fuzzy.c */
+#include "BLDC_Closed_loop.h"
+
 //#define MEMBERSHIP_FUNCTION_MAX		5
 #define MEMBERSHIP_FUNCTION_MAX		7
 
@@ -7,11 +9,17 @@
 	#define FUZZY_MEMBER_MAX		50
 	#define FUZZY_DEGREE_MAX		250U
 	#define FUZZY_MEMBER_HALF_BASE	25U
+	
+	#define FUZZY_OUT_MEMBER_MIN	(-8)
+	#define FUZZY_OUT_MEMBER_HALF_BASE 4U
 #elif (MEMBERSHIP_FUNCTION_MAX == 7 )
 	#define FUZZY_MEMBER_MIN		(-45)
 	#define FUZZY_MEMBER_MAX		45
 	#define FUZZY_DEGREE_MAX		225U
 	#define FUZZY_MEMBER_HALF_BASE	15U
+
+	#define FUZZY_OUT_MEMBER_MIN	(-12)
+	#define FUZZY_OUT_MEMBER_HALF_BASE 4U
 #else
 #error "Unsupport number of membeship function
 #endif
@@ -22,7 +30,8 @@ typedef struct
 	uint8_t	MemberDegree[MEMBERSHIP_FUNCTION_MAX];
 }FuzzyDegree_t;
 
-FuzzyDegree_t fuz_error, fuz_err_chg, fuz_pwm_chg;
+static FuzzyDegree_t fuz_error, fuz_err_chg, fuz_pwm_chg;
+static int16_t prev_err;
 /*-----------------------------------------------------------*/
 
 /************************************************************************
@@ -212,7 +221,7 @@ int16_t Defuzzify( FuzzyDegree_t *fuzzy )
 	/* Initialize result */
 	area = 0;
 	center = 0;
-	peak = FUZZY_MEMBER_MIN;
+	peak = FUZZY_OUT_MEMBER_MIN;
 
 	/* Summation loop */
 	for( i = 0; i < MEMBERSHIP_FUNCTION_MAX; i++ )
@@ -220,11 +229,29 @@ int16_t Defuzzify( FuzzyDegree_t *fuzzy )
 		dftemp = ( ( int16_t )( fuzzy->MemberDegree[i] ));
 		area +=  dftemp * peak;
 		center += dftemp;
-		peak += FUZZY_MEMBER_HALF_BASE;
+		peak += FUZZY_OUT_MEMBER_HALF_BASE;
 	}
 	
 	/* return the result */
 	return( area / center );
+}
+
+/************************************************************************
+*                                                                       *
+*      Function: 	     PWMControlEngineInit                           *
+*                                                                       *
+*      Description:      Initialize the closed-loop control engine.     *
+*                                                                       *
+*      Parameters:                                                      *
+*      Return value:                                                    *
+*                                                                       *
+*      Note:                                                            *
+*                                                                       *
+*************************************************************************/
+
+void PWMControlEngineInit()
+{
+	prev_err = 0;
 }
 
 /************************************************************************
@@ -242,10 +269,16 @@ int16_t Defuzzify( FuzzyDegree_t *fuzzy )
 *                                                                       *
 *************************************************************************/
 
-int16_t PWMControlEngine( int16_t err, int16_t err_chg )
+int16_t PWMControlEngine( int16_t err )
 {
+	int16_t err_chg;
+	
+	err_chg = err - prev_err;
+	
 	Fuzzify( err, &fuz_error );
 	Fuzzify( err_chg, &fuz_err_chg );
+	
+	prev_err = err;
 	
 	Inference();
 	
@@ -254,4 +287,3 @@ int16_t PWMControlEngine( int16_t err, int16_t err_chg )
  
 /*---------------------------------------------------------------------------*/
 /*===========================================================================*/
-

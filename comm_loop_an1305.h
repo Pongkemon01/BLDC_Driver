@@ -1,7 +1,7 @@
 #ifndef __COMM_LOOP_AN1305_H
 #define __COMM_LOOP_AN1305_H
 
-#define comm_time	( UNEG( TMR1_comm_time.word ) )
+#define comm_time()	( UNEG( TMR1_comm_time.word ) )
 
 extern doublebyte TMR1_comm_time;
 
