@@ -261,18 +261,19 @@ void PWMControlEngineInit()
 *      Description:      Implementation of the fuzzy controller         *
 *                        operates as described above.                   *
 *                                                                       *
-*      Parameters:       err : Desired speed - Current speed            *
-*                        err_chg : err - previous err                   *
+*      Parameters:       set_point : Desired speed (absolute value)     *
+*                        process_value : current BLDC speed             *
 *      Return value:     Delta PWM use to add to the current PWM value. *
 *                                                                       *
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
 
-int16_t PWMControlEngine( int16_t err )
+int16_t PWMControlEngine( int16_t set_point, int16_t process_value )
 {
-	int16_t err_chg;
+	int16_t err_chg, err;
 	
+	err = set_point - process_value;
 	err_chg = err - prev_err;
 	
 	Fuzzify( err, &fuz_error );

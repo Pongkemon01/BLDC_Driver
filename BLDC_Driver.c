@@ -631,8 +631,9 @@ void BLDC_Machine( void )
 *                                                                       *
 *      Function: 	     ReadCurrentRPM (Utility function)              *
 *                                                                       *
-*      Description:      Convert commutation time in TMR1_comm_time     *
-*                        back to electrical RPM.                        *
+*      Description:      Convert average commutation time from          *
+*                        TMR1_comm_time history log back to             *
+*                        electrical RPM.                                *
 *                                                                       *
 *      Parameters:                                                      *
 *      Return value:      RPM value in uint16_t                         *
@@ -643,10 +644,7 @@ void BLDC_Machine( void )
 
 uint16_t ReadCurrentRPM( void )
 {
-	uint16_t rpm;
-
-	rpm = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( ( uint32_t )comm_time() ) );
-	return( rpm );
+	return( (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( avg_comm_time() ) ) );
 }
 /*---------------------------------------------------------------------------*/
 
@@ -755,6 +753,21 @@ void ProcessSPIParam( void )
 		case SPI_SET_SPEED:
 			LED_OVERCURRENT = 0;
 			desired_speed = ( int16_t )( InpParam.word );
+			/* Cap with the boundary */
+			if(desired_speed > 0)
+			{
+				if( desired_speed > MAX_RPM )
+					desired_speed = MAX_RPM;
+				else if( desired_speed < MIN_RPM )
+					desired_speed = MIN_RPM;
+			}
+			else if( desired_speed != 0 )
+			{
+				if( desired_speed < -(MAX_RPM) )
+					desired_speed = -(MAX_RPM);
+				else if( desired_speed > -(MIN_RPM) )
+					desired_speed = -(MIN_RPM);
+			}
 			oc_restart_count = MAX_OVERCURRENT_RST;
 			break;
 			
@@ -1090,9 +1103,9 @@ void PwmManager(void)
 
 	if( BLDC_State == COMMUTE )
 	{
-		if(pi_blank < 50)
+		if(pi_blank != 0)
 		{
-			pi_blank++;
+			pi_blank--;
 			return;
 		}
 
@@ -1105,7 +1118,7 @@ void PwmManager(void)
 	else
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM control */
-		pi_blank = 0;
+		pi_blank = 50;
 		pwm_current = STARTUP_DUTY_CYCLE;
 
 		if( ( desired_pwm != 0 ) && ( BLDC_State == STOP ) )
@@ -1138,7 +1151,7 @@ void PwmManager(void)
 *************************************************************************/
 void SpeedManager(void)
 {
-	int16_t speed_error, delta_pwm, temp_pwm, avg_speed;
+	int16_t delta_pwm, temp_pwm, avg_speed;
 	
 	if( BLDC_Mode != SPEED_MODE ) return; /* Operate only in speed mode */
 
@@ -1148,30 +1161,28 @@ void SpeedManager(void)
 		PWM control because the newly-entered COMMUTE state may be still
 		unstable */
 		
-		if(pi_blank < 16)
+		if(pi_blank != 0)
 		{
-			pi_blank++;
+			pi_blank--;
 			return;
 		}
 
+		/* If request to stop the motor or change rotation direction,
+		then stop the motor first. */
 		if( ( desired_speed == 0 )
 		 || ( ( desired_speed < 0 ) && ( ReverseDirection == 0 ) )
 		 || ( ( desired_speed > 0 ) && ( ReverseDirection == 1 ) ) )
 		{
-			/* Request to stop the motor or change rotation direction */
 			BLDC_State = RAMPDOWN;
 			return;
 		}
 		
-		avg_speed = (uint16_t)( ( (uint32_t)COMM_TIME_TO_RPM_FACTOR ) / ( avg_comm_time() ) );		
-		if( desired_speed > 0)
-			speed_error = desired_speed - ( int16_t )avg_speed;
-		else
-			speed_error = ( -desired_speed ) - ( int16_t )avg_speed;
-
-
+		avg_speed = (int16_t)( ReadCurrentRPM() );
 		/* Calculate PWM change using a control engine */
-		delta_pwm = PWMControlEngine( speed_error );
+		if( desired_speed > 0)
+			delta_pwm = PWMControlEngine( desired_speed, avg_speed );
+		else
+			delta_pwm = PWMControlEngine( ( -desired_speed ), avg_speed );
 
 		/* if current_pwm + delta_pwm yield a negative number then an error occurs */
 		temp_pwm = ( (int16_t)pwm_current ) + delta_pwm;
@@ -1193,7 +1204,7 @@ void SpeedManager(void)
 	else
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
-		pi_blank = 0;
+		pi_blank = 1;
 		pwm_current = STARTUP_DUTY_CYCLE;
 		PWMControlEngineInit();
 
@@ -1272,7 +1283,7 @@ void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
-    uint16_t i = 0;
+    //uint16_t i = 0;
     
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	ReverseDirection = 0;
@@ -1343,9 +1354,9 @@ void main( void )
 				/* If time is up, shutdown/restart BLDC. The counter for
 				restarting the BLDC will be reset when a new speed-set
 				command is received from SPI */
-				if( TMR0_overcurrent_timer == 0 )
+				if( TMR0_overcurrent_timer == 0 && BLDC_State == COMMUTE )
 	        	{
-	        		LED_OVERTEMP = 1;	
+					TMR0_overcurrent_timer = TIMEBASE_OVERCURRENT_COUNT;
 		        	if( oc_restart_count != 0 )
 		        		oc_restart_count--;
 		        	else	
@@ -1355,15 +1366,15 @@ void main( void )
 			}
 
 			/* DEBUG */
-            i++;
+           /* i++;
             if(i == 200)
             {
                 //ReverseDirection = 1;
                 //BLDC_State = SETUP;
-                desired_speed = 6000;
-            }
+                desired_speed = 3000;
+            }*/
 
-			//CheckOverTemp();
+			CheckOverTemp();
 			if( BLDC_Mode == SPEED_MODE )
 				SpeedManager();
 			else

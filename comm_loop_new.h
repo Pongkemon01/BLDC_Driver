@@ -8,6 +8,8 @@
 
 /* History length for speed averaging */
 #define AVG_BACKLOG_LEN		3	/* Length is 2^(AVG_BACKLOG_LEN) */
+#define AVG_BACKLOG_SIZE	( 1 << AVG_BACKLOG_LEN )
+#define AVG_BACKLOG_MASK	( AVG_BACKLOG_SIZE - 1 )
 
 #define comm_time()		( UNEG( TMR1_comm_time.word ) )
 #define avg_comm_time()	( AvgCommTime() )

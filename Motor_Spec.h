@@ -147,5 +147,5 @@ time with this value will give the RPM.
 #define REQUEST_OFF					((LOW_OFF_REQUEST_PCT*MAX_DUTY_CYCLE)/100L)
 
 /* Spec for VideoRay Thruster */
-#define MIN_RPM                 3000
+#define MIN_RPM                 2000
 #define MAX_RPM                 8000

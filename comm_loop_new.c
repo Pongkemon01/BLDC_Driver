@@ -31,10 +31,6 @@
 
 uint16_t startup_rpm = UNEG(COMM_TIME_INIT);
 
-/* Average backlog */
-#define AVG_BACKLOG_SIZE	( 1 << ( AVG_BACKLOG_LEN - 1 ) )
-#define AVG_BACKLOG_MASK	( AVG_BACKLOG_SIZE - 1 )
-
 uint16_t avg_backlog[AVG_BACKLOG_SIZE];
 uint8_t avg_backlog_index;
 
