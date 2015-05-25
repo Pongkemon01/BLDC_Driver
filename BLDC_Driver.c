@@ -1283,7 +1283,7 @@ void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
-    //uint16_t i = 0;
+    uint16_t i = 0, j = 0;
     
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	ReverseDirection = 0;
@@ -1302,9 +1302,9 @@ void main( void )
 	GO = 1;	/* Start first temperature read-out */
 
 	/* Code section for debug */
-	/*SetCCPVal( STARTUP_DUTY_CYCLE );
+	SetCCPVal( STARTUP_DUTY_CYCLE );
 	CCP1CON = CCP1CON_INIT;
-	
+	/*
 	DRIVE_U = 0;
 	DRIVE_V = 0;
 	DRIVE_W = 0;
@@ -1328,7 +1328,7 @@ void main( void )
 	{
 		CLRWDT();
 		CheckOverCurrent();
-		SPIManager();
+		//SPIManager();
 
 	    if( TimeBaseManager() == 1 ) /* Return 1 every 10ms */
 		{
@@ -1373,13 +1373,63 @@ void main( void )
                 //BLDC_State = SETUP;
                 desired_speed = 3000;
             }*/
+                        /* M Debug */
+
+                        if(i == 0)
+                        {
+                            switch(j)
+                            {
+                                case 0:
+                                    PSTRCON = MODULATE_W;
+                                    DRIVE_U = 1;
+                                    DRIVE_V = 0;
+                                    DRIVE_W = 0;
+                                    break;
+                                case 1:
+                                    PSTRCON = MODULATE_W;
+                                    DRIVE_U = 0;
+                                    DRIVE_V = 1;
+                                    DRIVE_W = 0;
+                                    break;
+                                case 2:
+                                    PSTRCON = MODULATE_U;
+                                    DRIVE_U = 0;
+                                    DRIVE_V = 1;
+                                    DRIVE_W = 0;
+                                    break;
+                                case 3:
+                                    PSTRCON = MODULATE_U;
+                                    DRIVE_U = 0;
+                                    DRIVE_V = 0;
+                                    DRIVE_W = 1;
+                                    break;
+                                case 4:
+                                    PSTRCON = MODULATE_V;
+                                    DRIVE_U = 0;
+                                    DRIVE_V = 0;
+                                    DRIVE_W = 1;
+                                    break;
+                                case 5:
+                                    PSTRCON = MODULATE_V;
+                                    DRIVE_U = 1;
+                                    DRIVE_V = 0;
+                                    DRIVE_W = 0;
+                                    break;
+                            }
+                            j++;
+                            if(j > 5) j = 0;
+                        }
+                        i++;
+                        if(i >= 200) i = 0;
+
+
 
 			CheckOverTemp();
-			if( BLDC_Mode == SPEED_MODE )
-				SpeedManager();
-			else
-				PwmManager();
-			BLDC_Machine();
+			//if( BLDC_Mode == SPEED_MODE )
+			//	SpeedManager();
+			//else
+			//	PwmManager();
+			//BLDC_Machine();
 		}
 	}
 }
