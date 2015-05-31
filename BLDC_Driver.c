@@ -810,6 +810,17 @@ then new data to server should be place in the SSPBUF for next SSPIF.
 */
 
 	volatile uint8_t dummy; /* Prevent optimization to remove this variable */
+	
+	if( SSPOV == 1 )
+	{
+		/* SPI Overflow!!! The state must be reset to IDLE */
+		SPI_State = IDLE;
+		dummy = SSPBUF;
+		SSPOV = 0;
+		SSPIF = 0;
+		
+		return;
+	}
 
 	/* Retrieve commands from 8-bit SPI module */
 	if( SSPIF == 0)
@@ -1151,7 +1162,7 @@ void PwmManager(void)
 *************************************************************************/
 void SpeedManager(void)
 {
-	int16_t delta_pwm, temp_pwm, avg_speed;
+	int16_t temp_pwm, avg_speed;
 	
 	if( BLDC_Mode != SPEED_MODE ) return; /* Operate only in speed mode */
 
@@ -1179,13 +1190,11 @@ void SpeedManager(void)
 		
 		avg_speed = (int16_t)( ReadCurrentRPM() );
 		/* Calculate PWM change using a control engine */
+		/* If temp_pwm is a negative number, then an error occurs */
 		if( desired_speed > 0)
-			delta_pwm = PWMControlEngine( desired_speed, avg_speed );
+			temp_pwm = PWMControlEngine( ( int16_t )pwm_current, desired_speed, avg_speed );
 		else
-			delta_pwm = PWMControlEngine( ( -desired_speed ), avg_speed );
-
-		/* if current_pwm + delta_pwm yield a negative number then an error occurs */
-		temp_pwm = ( (int16_t)pwm_current ) + delta_pwm;
+			temp_pwm = PWMControlEngine( ( int16_t )pwm_current, ( -desired_speed ), avg_speed );
 
 		/* stop when speed requested is below the minimum speed threshold */
 		if( temp_pwm < REQUEST_OFF )
@@ -1283,7 +1292,7 @@ void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
-    //uint16_t i = 0;
+    uint16_t i = 0;
     
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	ReverseDirection = 0;
@@ -1366,13 +1375,24 @@ void main( void )
 			}
 
 			/* DEBUG */
-           /* i++;
-            if(i == 200)
+			/*if( i < 65530 )
+				i++;
+            if(i == 400)
             {
-                //ReverseDirection = 1;
-                //BLDC_State = SETUP;
-                desired_speed = 3000;
-            }*/
+				//ReverseDirection = 1;
+				//BLDC_State = SETUP;
+				desired_speed = 5000;
+			}
+			if(i == 1000)
+			{
+				desired_speed = 3000;
+			}
+
+			if(i == 1500)
+			{
+				desired_speed = 6000;
+			}*/
+            /* End of DEBUG */
 
 			CheckOverTemp();
 			if( BLDC_Mode == SPEED_MODE )
