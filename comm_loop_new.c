@@ -37,6 +37,12 @@ uint8_t avg_backlog_index;
 /* Variables for ISR */
 enum isr_state_t{zero_detect,commutate} isr_state;
 uint8_t zc_count;
+#if !(INTE_SCALE > 15)
+	int16_t sum_zc_error;
+#endif
+#if !(DIFF_SCALE > 15)
+	int16_t prev_zc_error;
+#endif
 
 /* Zero-crossing timing state */
 doublebyte TMR1_comm_time;
@@ -47,9 +53,6 @@ doublebyte comm_after_zc;
 /* Timer counters for startup */
 uint8_t TMR0_excite_timer;
 uint16_t current_pwm;
-
-/* Sub-state */
-uint8_t excite_events;
 
 /*---------------------------------------------------------------------------*/
 
@@ -120,7 +123,6 @@ static int16_t zc_error, temp1, temp2;
 					zc.bytes.low = TMR1L;
 				}while (zc.bytes.high != TMR1H);
 				
-				/* Average zc time using EMA(3) */
 				if( zc.word <= TMR1_comm_time.word )
 					zc.word = TMR1_comm_time.word;
 
@@ -162,8 +164,7 @@ static int16_t zc_error, temp1, temp2;
 				/* Interrupt is from timer1
 				If execution reaches this point then a Timer1 interrupt
 				occurred before zero-crossing was detected. This should only
-				happen during deceleration and acceleration when searching for
-				zero cross in forced commutation. */
+				happen during deceleration and acceleration in startup. */
 				
 				/* Corrective calculation */
 
@@ -171,8 +172,25 @@ static int16_t zc_error, temp1, temp2;
 				/* adjust the zero-crossing time to catch up with the motor */
 				if(BLDC_State == COMMUTE)
 				{
+					/* At this moment, we don't have zc information because
+					we missed the zero crossing. The current zc was acquired
+					from the previous zero crossing time. We must adjust
+					something to accomodate this event to error adjustment below.
+					The error calculation performs on zc and expected_zc.
+					However, the value of expected_zc will be evaluated later
+					from TMR1_comm_time. Therefore, we should attach this
+					error event in either zc or TMR1_comm_time.
+					Remember that both of them are negative by nature. */
+
+					/* Cases of embedded in zc */					
 					/* Assume that zero-crossing at the end of commutation */
-					zc.word = 0xFFFF;
+					zc.word = 0xFFA0;
+                                    //zc.word += ( (expected_zc>>3) | 0xE000U );
+					
+					/* Cases of embedded in TMR1_comm_time */
+					/* TMR1_comm_time is negative so adding negative number
+					lengthens comm time. (lengthen by 1/8 commutation cycle) */
+					//TMR1_comm_time.word += ( (expected_zc>>3) | 0xE000U );
 				}
 				/* No "break" statement here. We follow through
 				"commutate" state to process timer1 interrupt. */
@@ -268,9 +286,28 @@ static int16_t zc_error, temp1, temp2;
 					*/
 
 					expected_zc = UDIV2( TMR1_comm_time.word ); /* CT(n)/2 */
+					/* Average zc time using SMA(2) */
 					avg_zc = UDIV2( zc.word ) + UDIV2( prev_zc.word );
 
+#if !(DIFF_SCALE > 15)
+					prev_zc_error = zc_error;
+#endif
+
 					zc_error = (int16_t)(avg_zc - expected_zc); /* ZCE(n) = ZC(n)-(CT(n)/2) */
+
+#if !(INTE_SCALE > 15)
+					sum_zc_error += zc_error;
+					
+					/* Limit sum_zc_error to 15000 (empirical value) */
+					if( sum_zc_error > 15000 ) sum_zc_error = 15000;
+					if( sum_zc_error < -15000 ) sum_zc_error = -15000;
+#endif
+
+					/* stop forced commutation if zero cross detected within
+					middle half of commutation period */
+					/* Note by Pong: we can adjust how narrow of the zero cross
+					range. For example, ((-expected_zc.word)>>2) for within
+					the middle quater. */
 					/* absolute value */
 					if( zc_error < 0 )
 						temp1 = -zc_error;
@@ -278,11 +315,6 @@ static int16_t zc_error, temp1, temp2;
 						temp1 = zc_error;
 					temp2 = (int16_t)(UNEG( expected_zc ));
 					temp2 >>= 1;
-					/* stop forced commutation if zero cross detected within
-					middle half of commutation period */
-					/* Note by Pong: we can adjust how narrow of the zero cross
-					range. For example, ((-expected_zc.word)>>2) for within
-					the middle quater. */
 					if (temp1 < temp2)
 					{
 						if( BLDC_State == RAMPUP )
@@ -303,20 +335,26 @@ static int16_t zc_error, temp1, temp2;
 					else
 						zc_count = EXPECT_ZC_COUNT;
 
-					/* Note by Pong: If we want to change start-up procedure--
-					for example, make different adjustment to TMR1_comm_time--
-					just add an if-else structure here. For example:
-					if( BLDC_State == RAMPUP )
-					{
-						Start-up procedure
-					}
-					else
-					{
-						commutation procedure
-					}
-					*/
-					/* -CT(n+1) = -CT(n) - ZCE(n)*Error_Gain */
-					TMR1_comm_time.word -= (uint16_t)(zc_error>>ERROR_SCALE);
+					/* zc_error and sum_zc_error are signed integer so conventional shifting
+					is signed extended */
+					/* The original algorithm from Microchip is a proportional
+					controller. The equation is :
+						-CT(n+1) = -CT(n) - ZCE(n)*Error_Gain
+					 Later modification attempt to add integral part and then
+					 to add differential part to become full PID controller */
+					
+					/* Part 1: Proportional part (the original part) */
+					TMR1_comm_time.word -= (uint16_t)(zc_error >> ERROR_SCALE);
+
+#if !(INTE_SCALE > 15)
+					/* Part 2: Integral part (Added on 5-Jun-2015) (tested) */
+					TMR1_comm_time.word -= (uint16_t)(sum_zc_error >> INTE_SCALE);
+#endif
+
+#if !(DIFF_SCALE > 15)
+					/* Part 3: Differential part (Added on 6-Jun-2015 (yet to test) */
+					TMR1_comm_time.word -= (uint16_t)((zc_error - prev_zc_error) >> DIFF_SCALE);
+#endif
 					
 					/* Keep current TMR1_comm_time in backlog */
 					avg_backlog[avg_backlog_index] = UNEG(TMR1_comm_time.word);
@@ -411,14 +449,21 @@ void CommLoop_Setup()
 	for( c = 0 ; c < AVG_BACKLOG_SIZE ; c++ )
 		avg_backlog[c] = 0;
 	avg_backlog_index = 0;
-
-	/* Setup Sub-states */
-	excite_events = ALIGN_STEPS;
+	
+	/* Clear all control variables */
+#if !(INTE_SCALE > 15)
+	sum_zc_error = 0;
+#endif
+#if !(DIFF_SCALE > 15)
+	prev_zc_error = 0;
+#endif
 
 	/* Start the first move */
 	/* startup duty cycle; It is already normalized to MAX_DUTY_CYCLE */
-	current_pwm = ALIGN_PWM_START;
-	SetCCPVal( ALIGN_PWM_START );
+	//current_pwm = ALIGN_PWM_START;
+	//SetCCPVal( ALIGN_PWM_START );
+	current_pwm = STARTUP_DUTY_CYCLE;
+	SetCCPVal( STARTUP_DUTY_CYCLE );
 	CCP1CON = CCP1CON_INIT;           /* PWM on */
 	
 	/* HIN = U; LIN = V and W */
@@ -451,58 +496,44 @@ uint8_t CommLoop_Align(void) /* Excitation phase */
 	--TMR0_excite_timer;
 	if( TMR0_excite_timer == 0 )
 	{
-		/* when slow start is complete change to the startup timer
-		   which determines how long to ramp-up at fixed commutations
-		   the ramp-up is terminated early when the first zero cross
-		   is detected. */
-		--excite_events;
-		if( excite_events == 0 )
+		zc_count = EXPECT_ZC_COUNT;
+
+		/* Initial RPM */
+		TMR1_comm_time.word = startup_rpm;
+
+		/* Setup commutation timing */
+		zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
+		comm_after_zc.word = UDIV2( zc.word );
+
+		TMR1H = TMR1_comm_time.bytes.high;
+		TMR1L = TMR1_comm_time.bytes.low;
+		isr_state = commutate;
+		/* Setup commutation phase for start up */
+		/* HIN = none */
+		DRIVE_U = 0;
+		DRIVE_V = 0;
+		DRIVE_W = 0;
+		if( ReverseDirection )
 		{
-			zc_count = EXPECT_ZC_COUNT;
-
-			/* Initial RPM */
-			TMR1_comm_time.word = startup_rpm;
-
-			/* Setup commutation timing */
-			zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
-			comm_after_zc.word = UDIV2( zc.word );
-
-			TMR1H = TMR1_comm_time.bytes.high;
-			TMR1L = TMR1_comm_time.bytes.low;
-			isr_state = commutate;
-			/* Setup commutation phase for start up */
-			/* HIN = none */
-			DRIVE_U = 0;
-			DRIVE_V = 0;
-			DRIVE_W = 0;
-			if( ReverseDirection )
-			{
-				/* LIN = V */
-				PSTRCON = MODULATE_V;
-				comm_state = 6;
-			}
-			else
-			{
-				/* LIN = W */
-				PSTRCON = MODULATE_W;
-				comm_state = 3;
-			}
-			Commutate();	/* Make the first move */
-			TMR1ON = 1;
-			TMR1IE = 1;
-			PEIE=1;
-			GIE=1;
-			return(1);
+			/* LIN = V */
+			PSTRCON = MODULATE_V;
+			comm_state = 6;
 		}
 		else
 		{
-			/* reset the dwell timer for the next step */
-			TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
-			current_pwm += ALIGN_PWM_STEP;
-			SetCCPVal( current_pwm );
+			/* LIN = W */
+			PSTRCON = MODULATE_W;
+			comm_state = 3;
 		}
+		Commutate();	/* Make the first move */
+		TMR1ON = 1;
+		TMR1IE = 1;
+		PEIE=1;
+		GIE=1;
+		return(1);
 	}
-	return(0);
+	else
+		return(0);
 }
 /*---------------------------------------------------------------------------*/
 

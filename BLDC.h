@@ -35,7 +35,7 @@
  * SYSTEM OSCILLATOR
  ******************************************************/
 #define  FOSC_32_MHZ
-#define  HIGHSPEED_PWM
+//#define  HIGHSPEED_PWM
 
 // Primary oscillator
 #define  FOSC                    32000000L
@@ -109,7 +109,7 @@
 
 // TIMEBASE_STARTUP_ms = number of milliseconds allowed to achieve zero-cross lock
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMEBASE_EXCITE_ms           20
+#define  TIMEBASE_EXCITE_ms           60
 
 // TIMEBASE_RAMPUP_ms = number of milliseconds allowed to achieve zero-cross lock
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
@@ -144,6 +144,9 @@
 /* Time constant for monostable of over-current event */
 #define  TIMEBASE_OC_DELAY_ms			100
 
+/* Time interval between each outer control iteration (speed or pwm control) */
+#define TIMEBASE_CONTROL_ITER_ms		50
+
 /******************************************************
  * TIMEBASE times converted to counts
  ******************************************************/
@@ -156,6 +159,7 @@
 #define TIMEBASE_STALLCHECK_COUNT	(TIMEBASE_STALLCHECK_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_OVERCURRENT_COUNT	(TIMEBASE_OVERCURRENT_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_OC_DELAY_COUNT		(TIMEBASE_OC_DELAY_ms/TIMEBASE_MS_PER_COUNT)
+#define TIMEBASE_CONTROL_ITER_COUNT	(TIMEBASE_CONTROL_ITER_ms/TIMEBASE_MS_PER_COUNT)
 
 /******************************************************
  * TIMER1 based
@@ -199,6 +203,9 @@
 //#define PWM_FREQ               20000L
 #endif
 
+/* For 12.5kHz - Duty-cycle period could be 0 - 635
+   For 31.25kHz - Duty-cycle period could be 0 - 1023
+*/
 #define PWM_PERIOD             (((TIMER2_FREQUENCY/PWM_FREQ)-1L)&0xFF)   
 
 /*-----------------------------------------------------------*/
@@ -320,12 +327,12 @@
 /* Comparator initializations */
 
 /* BEMF comparator initialization */
-#define  CMxCON0_INIT         CxON | CxOE | CxFAST | CxHYST
+#define  CMxCON0_INIT         ( CxON | CxOE | CxFAST | CxHYST )
 #define  CMxCON1_INIT         SENSE_V_RISING
 
 /* Overcurrent sense comparator initialization */
-#define CMyCON0_INIT    CxON | CxFAST | CxINV | CxHYST
-#define CMyCON1_INIT	CxINTP | CxCDAC | CxIN3     
+#define CMyCON0_INIT    ( CxON | CxFAST | CxINV | CxHYST )
+#define CMyCON1_INIT	( CxINTP | CxCDAC | CxIN3 )
 
 /*-----------------------------------------------------------*/
 /******************************************************
@@ -333,11 +340,17 @@
  ******************************************************/
 #define FVRCON_INIT		0b11111000	/* Out 2.048V to DAC. Also turn-on temperature sensor */
 #define DACCON0_INIT	0b11001000	/* Use FVR as ref+ and GND as ref- */
-#define DAC_5A                  8
+#define DAC_3A			5			/* DAC value for 3A */
+#define DAC_3A66		6			/* DAC value for 3.66A */
+#define DAC_5A			8			/* DAC value for 5A */
+#define DAC_6A			10			/* DAC value for 5A */
+#define DAC_6A7			11			/* DAC value for 5A */
+#define DAC_7A3			12			/* DAC value for 5A */
+#define DAC_8A			13			/* DAC value for 5A */
 #define DAC_10A			16			/* DAC value for 10A */
 #define DAC_12A			20			/* DAC value for 12A */
 #define DAC_14A			23			/* DAC value for 14A */
-#define DAC_DEFAULT_CURRENT	DAC_10A
+#define DAC_DEFAULT_CURRENT	DAC_7A3	/* Power Dis. for MOSFET is 59w@16.4v = 3.5A */
 
 /******************************************************
  * ADC
@@ -389,16 +402,16 @@
 #define MODULATE_W           MODULATE_C
 #define MODULATE_OFF         0
 
-#define SENSE_A_RISING       CxINTP | CxPIN | CxIN0
-#define SENSE_B_RISING       CxINTP | CxPIN | CxIN1
-#define SENSE_C_RISING       CxINTP | CxPIN | CxIN2
+#define SENSE_A_RISING       ( CxINTP | CxPIN | CxIN0 )
+#define SENSE_B_RISING       ( CxINTP | CxPIN | CxIN1 )
+#define SENSE_C_RISING       ( CxINTP | CxPIN | CxIN2 )
 #define SENSE_U_RISING       SENSE_A_RISING
 #define SENSE_V_RISING       SENSE_B_RISING
 #define SENSE_W_RISING       SENSE_C_RISING
 
-#define SENSE_A_FALLING      CxINTN | CxPIN | CxIN0
-#define SENSE_B_FALLING      CxINTN | CxPIN | CxIN1
-#define SENSE_C_FALLING      CxINTN | CxPIN | CxIN2
+#define SENSE_A_FALLING      ( CxINTN | CxPIN | CxIN0 )
+#define SENSE_B_FALLING      ( CxINTN | CxPIN | CxIN1 )
+#define SENSE_C_FALLING      ( CxINTN | CxPIN | CxIN2 )
 #define SENSE_U_FALLING      SENSE_A_FALLING
 #define SENSE_V_FALLING      SENSE_B_FALLING
 #define SENSE_W_FALLING      SENSE_C_FALLING

@@ -15,6 +15,12 @@
 //             Example: Applied voltage = 80V, STARTUP_DUTY_CYCLE = 0x10, therefore:
 //             Startup voltage = 80 * 16/125 = 10.24 volts.
 //
+// MAX_PRAC_DUTY_PCT = determine the maximum percent of allowable pwm duty-cycle.
+// As the charge-pump circuits for high-side MOSFETs require a certain amount 
+// of PWM off time to recharge capacitors. The maximum PWM duty-cycle should not
+// be greater than this value.
+//
+//
 // BLANKING_COUNT_us - The number of microseconds to hold off from detecting zero cross
 //            immediately after a commutation event. This allows the flyback currents
 //            to die out so the back EMF can be accurately measured. Flyback current
@@ -28,18 +34,10 @@
 //             top rated speed. The control loop recognizes this and reverts back to the 
 //             startup procedure when it happens.
 //
-// ERROR_SCALE - Feedback scaling factor.
-//             The error is the difference between the expected zero cross time and the
-//             actual zero cross time. The error is scaled down before it is accumulated into
-//             into the commutation time. 2 raised to ERROR_SCALE (2^ERROR_SCALE) is the scaling
-//             division factor. If the scaling factor is too large then the motor response will
-//             be slow. If the scaling factor is too small then the motor may become unstable.
-//             If the motor frequently misses lock after the startup sequence then this number is 
-//             probably too small. If the motor loses lock at high speed or during acceleratioin
-//             then this number is probably too large.
-//
 ///////////////////////////////////////////////////////////////////////////////
 //
+
+#ifndef __MOTOR_SPEC
 
 /************************************************************************
 * Motor Definitions                                                               
@@ -47,7 +45,17 @@
 /* start speed in electrical RPM. However, since timer register is a
  * 16-bit register counting at 1MHz, counting for 1 round can manage
  * the speed at the minimum rate of 160RPM(elec) */
-#define START_RPM               300L
+#define START_RPM               700
+
+// percentage of speed request below which the motor will turn off
+#define LOW_OFF_REQUEST_PCT       16L
+
+/* MAX_PRAC_DUTY_PCT = determine the maximum percent of allowable pwm duty-cycle.
+   As the charge-pump circuits for high-side MOSFETs require a certain amount 
+   of PWM off time to recharge capacitors. The maximum PWM duty-cycle should not
+   be greater than this value.
+*/
+#define MAX_PRAC_DUTY_PCT		80L
 
 // STARTUP_DRIVE_PCT = determines initial CCPR1L duty cycle from speed table for motor startup
 // NOTE: A CCPR1L number that seems to work best for all applications is 13%
@@ -56,7 +64,9 @@
 //       Smaller numbers usually do not produce enough torque to start the motor.
 // There are three startup values. The one to use will be determined by measuring
 // the motor supply voltage before startup.
-#define STARTUP_DRIVE_PCT        45L
+
+// Try lower percent such as 13 - 35 to smooth startup speed
+#define STARTUP_DRIVE_PCT        20L
 
 // MAX_STARTUP_EVENTS - The startup algorithm starts by single stepping the motor
 //             this number of times. This is done to position the motor in a known
@@ -96,16 +106,10 @@ time with this value will give the RPM.
 */
 #define COMM_TIME_TO_RPM_FACTOR	( ( TMR1_COUNTS_PER_SEC * SEC_PER_MIN ) / COMM_PER_REV )
 
-// +1 forces PWM to 100% duty cycle and adjust to 10 bits
-#define MAX_DUTY_CYCLE        ((PWM_PERIOD+1)<<2)
-
-#define STARTUP_DUTY_CYCLE        ((STARTUP_DRIVE_PCT*MAX_DUTY_CYCLE)/100L)
-
-// number of slow commutations between warmup and startup                                          
-#define EXCITE_STEPS                  2
-
+/* Number of contiguous zero crossing to be considered as stable */
 #define EXPECT_ZC_COUNT                 3
 
+/* Number of restarting times if the motor stops working */
 #define MAX_OVERCURRENT_RST			2
 
 // blanking count in microseconds
@@ -121,11 +125,6 @@ time with this value will give the RPM.
 #endif
 #define MIN_COMM_TIME               ((STALL_COUNT_us * TMR1_COUNTS_PER_SEC)/MICROSECONDS_PER_SECOND)
 
-// The raw error is divided by 2 to the power of ERROR_SCALE before accumulating.
-// Example: If the raw error is 96 and ERROR_SCALE is 3 then the error correction that is accumulated
-// is reduced to 96/2^3 or 12.
-#define ERROR_SCALE                 3
-
 // Number of microseconds to commutate early after zero cross
 // this number is subtracted from half the expected commutation time to set commutation event after zero cross
 #define ADVANCE_TIMING_us           0L
@@ -138,14 +137,25 @@ time with this value will give the RPM.
 #define ADVANCE_COUNT               (ADVANCE_TIMING_us*TMR1_COUNTS_PER_us)
 #define FIXED_ADVANCE_COUNT         (FIXED_ADVANCE_TIMING_us*TMR1_COUNTS_PER_us)
 
+/* PWM_ROC the maximum amount of PWM change in a control interval.
+   Too high value may cause the motor unstable. Lower value makes the motor
+   to reach desired speed slower.
+*/
+#define PWM_ROC			10
+
 ////////////////////////////////////////////////////////////////////////////////////////
 //// On-Off limits
 
-// percentage of speed request below which the motor will turn off
-#define LOW_OFF_REQUEST_PCT         12L
+// +1 forces PWM to 100% duty cycle and adjust to 10 bits
+#define MAX_DUTY_CYCLE        ((PWM_PERIOD+1)<<2)
+#define MAX_PRAC_DUTY_CYCLE		((MAX_PRAC_DUTY_PCT*MAX_DUTY_CYCLE)/100L)
+#define STARTUP_DUTY_CYCLE        ((STARTUP_DRIVE_PCT*MAX_DUTY_CYCLE)/100L)
 
 #define REQUEST_OFF					((LOW_OFF_REQUEST_PCT*MAX_DUTY_CYCLE)/100L)
 
 /* Spec for VideoRay Thruster */
-#define MIN_RPM                 3000
+#define MIN_RPM                 2500
 #define MAX_RPM                 8000
+
+
+#endif /* __MOTOR_SPEC */

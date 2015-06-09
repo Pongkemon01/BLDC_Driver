@@ -732,8 +732,8 @@ Set operation mode to speed mode: 1000 0100
 Set operation mode to PWM mode: 1000 1000
 	return kect 0000
 
-Set PWM value (used only in PWM mode): 1000 11dd dddd dddd
-	where d is 10-bit duty cycle value
+Set PWM value (used only in PWM mode): 1000 1100 dddd dddd
+	where d is percent of PWM duty cycle (0 - 100)
 	return kect 0000 kect 0000
 
 Get PWM value : 1001 0000 0000 0000 0000 0000
@@ -774,7 +774,12 @@ void ProcessSPIParam( void )
 		case SPI_NOP:
 			LED_OVERCURRENT = 0;
 			if( NewSPIUndocCommand == SPI_UNDOC_SET_PWM )
-				desired_pwm = (InpParam.word & 0x03FF);
+			{
+				/* Parameter should be in percent (0 - 100) */
+				if( InpParam.word > 100 )
+					InpParam.word = 100;	/* Cap the maximum value */
+				desired_pwm = (uint16_t)( ( ( (uint32_t)InpParam.word ) * MAX_DUTY_CYCLE ) / 100L );
+			}
 			break;
 
 		default:
@@ -856,7 +861,7 @@ then new data to server should be place in the SSPBUF for next SSPIF.
 								break;
 							case SPI_UNDOC_PWM_M:
 								BLDC_Mode = PWM_MODE;
-                                                                desired_pwm = pwm_current;
+                                desired_pwm = pwm_current;
 								//if( BLDC_State == COMMUTE )
 								//	BLDC_State = RAMPDOWN;
 								SSPBUF = PackStatus();
@@ -899,7 +904,7 @@ then new data to server should be place in the SSPBUF for next SSPIF.
 				case SPI_GET_SPEED:
 					RetParam.word = (uint16_t)(ReadCurrentRPM());
 					if( ReverseDirection == 1 ) /* Reverse direction? then negative rpm */
-						RetParam.word = (~(RetParam.word)) + 1;
+						RetParam.word = UNEG( RetParam.word );
 					SSPBUF = RetParam.bytes.high;
 					SPI_State = PARAM21;
 					break;
@@ -1108,31 +1113,48 @@ void InitSystem( void )
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
-void PwmManager(void)
+inline void PwmManager(void)
 {
-	if( BLDC_Mode != PWM_MODE ) return; /* Operate only in PWM mode */
+	//if( BLDC_Mode != PWM_MODE ) return; /* Operate only in PWM mode */
 
 	if( BLDC_State == COMMUTE )
 	{
-		if(pi_blank != 0)
+
+		if( desired_pwm < REQUEST_OFF )
 		{
-			pi_blank--;
+			desired_pwm = 0;
+			BLDC_State = RAMPDOWN;
 			return;
 		}
 
+		if( desired_pwm > MAX_PRAC_DUTY_CYCLE )
+			desired_pwm = MAX_PRAC_DUTY_CYCLE;
+			
 		if( pwm_current != desired_pwm )
 		{
-			pwm_current = desired_pwm;
+			if( desired_pwm > pwm_current )
+			{
+				if( ( desired_pwm - pwm_current ) > PWM_ROC )
+					pwm_current += PWM_ROC;
+				else
+					pwm_current = desired_pwm;
+			}
+			else
+			{
+				if( ( pwm_current - desired_pwm ) > PWM_ROC )
+					pwm_current -= PWM_ROC;
+				else
+					pwm_current = desired_pwm;
+			}
 			SetCCPVal( pwm_current );
 		}
 	}
 	else
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM control */
-		pi_blank = 50;
 		pwm_current = STARTUP_DUTY_CYCLE;
 
-		if( ( desired_pwm != 0 ) && ( BLDC_State == STOP ) )
+		if( ( desired_pwm >= STARTUP_DUTY_CYCLE ) && ( BLDC_State == STOP ) )
 			BLDC_State = SETUP;	/* Start motor if a desired speed is set */
 	}
 }
@@ -1160,7 +1182,7 @@ void PwmManager(void)
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
-void SpeedManager(void)
+inline void SpeedManager(void)
 {
 	int16_t temp_pwm, avg_speed;
 	
@@ -1172,11 +1194,11 @@ void SpeedManager(void)
 		PWM control because the newly-entered COMMUTE state may be still
 		unstable */
 		
-		if(pi_blank != 0)
+		/*if(pi_blank != 0)
 		{
 			pi_blank--;
 			return;
-		}
+		}*/
 
 		/* If request to stop the motor or change rotation direction,
 		then stop the motor first. */
@@ -1198,33 +1220,22 @@ void SpeedManager(void)
 
 		/* stop when speed requested is below the minimum speed threshold */
 		if( temp_pwm < REQUEST_OFF )
-		{
-			BLDC_State = RAMPDOWN;
-			return;
-		}
-
-		pwm_current = (uint16_t)temp_pwm;
-		if( pwm_current > MAX_DUTY_CYCLE )
-			pwm_current = MAX_DUTY_CYCLE;
-
-		/* set the motor voltage PWM */
-		SetCCPVal( pwm_current );
+			temp_pwm = 0;
+		desired_pwm = (uint16_t)temp_pwm;
 	}
 	else
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
 		pi_blank = 1;
-		pwm_current = STARTUP_DUTY_CYCLE;
 		PWMControlEngineInit();
 
-		if( ( desired_speed != 0 ) && ( BLDC_State == STOP ) )
+		if( ( desired_speed >= MIN_RPM ) && ( BLDC_State == STOP ) )
 		{
+			desired_pwm = STARTUP_DUTY_CYCLE;
 			if( desired_speed < 0 )
 				ReverseDirection = 1;
 			else
 				ReverseDirection = 0;
-
-			BLDC_State = SETUP;	/* Start motor if a desired speed is set */
 		}
 	}
 }
@@ -1243,7 +1254,7 @@ void SpeedManager(void)
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
-void CheckOverCurrent( void )
+inline void CheckOverCurrent( void )
 {
 	/* Check for over-current. Over-current status will be cleared by
 	monostable operation in Main */
@@ -1268,7 +1279,7 @@ void CheckOverCurrent( void )
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
-void CheckOverTemp( void )
+inline void CheckOverTemp( void )
 {
 	doublebyte Temperature;
 
@@ -1292,9 +1303,12 @@ void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
+	uint8_t	control_timer, pwm_timer;
     uint16_t i = 0;
     
 	timebase_10ms = TIMEBASE_LOAD_10ms;
+	control_timer = TIMEBASE_CONTROL_ITER_COUNT;
+        pwm_timer = 2;
 	ReverseDirection = 0;
 	desired_speed = 0;
 	desired_pwm = 0;
@@ -1330,7 +1344,11 @@ void main( void )
 	//DRIVE_W = 1;
 
 
-        //desired_pwm = STARTUP_DUTY_CYCLE;/* End of debugging code */
+        //desired_pwm = STARTUP_DUTY_CYCLE;
+    
+    
+    BLDC_Mode = PWM_MODE;
+    /* End of debugging code */
 
 	/* Main loop */
 	while(1) /* Infinite Loop */
@@ -1342,6 +1360,8 @@ void main( void )
 	    if( TimeBaseManager() == 1 ) /* Return 1 every 10ms */
 		{
 			/* This block is executed every 10ms */
+			BLDC_Machine();
+			CheckOverTemp();
 			
 			/* Over-current protection */
 			if( TMR0_oc_monostable_timer != 0 )
@@ -1374,16 +1394,51 @@ void main( void )
 	        	}
 			}
 
+			control_timer--;
+			if( control_timer == 0 )
+			{
+				/* Outer control algorithm should be performed in longer
+				interval than 10ms. Otherwise, the motor is unstable in
+				high speed */
+				control_timer = TIMEBASE_CONTROL_ITER_COUNT;
+				if( BLDC_Mode == SPEED_MODE )
+				{
+					/* Perform speed controller to adjust PWM value */
+					SpeedManager();
+				}
+			}
+                        pwm_timer--;
+                        if( pwm_timer == 0 )
+                        {
+                            pwm_timer = 2;
+                            PwmManager();
+                        }
+
+
 			/* DEBUG */
-			/*if( i < 65530 )
+			if( i < 65530 )
 				i++;
             if(i == 400)
             {
 				//ReverseDirection = 1;
 				//BLDC_State = SETUP;
-				desired_speed = 5000;
+				//desired_speed = MIN_RPM;
+				//STARTUP_DUTY_CYCLE = 
+				//desired_pwm = STARTUP_DUTY_CYCLE*2; /* Max = 635 */
+                //desired_pwm = 330;  // Max for V2 (6.7A)
+                desired_pwm = 250;
 			}
-			if(i == 1000)
+			if( i == 800 )
+			{
+                desired_pwm = 330;
+				//desired_speed = 6000;
+			}
+			if( i == 1200 )
+			{
+				desired_pwm = 150;
+				//desired_speed = 3500;
+			}
+			/*if(i == 1000)
 			{
 				desired_speed = 3000;
 			}
@@ -1394,12 +1449,6 @@ void main( void )
 			}*/
             /* End of DEBUG */
 
-			CheckOverTemp();
-			if( BLDC_Mode == SPEED_MODE )
-				SpeedManager();
-			else
-				PwmManager();
-			BLDC_Machine();
 		}
 	}
 }
