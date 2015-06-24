@@ -62,16 +62,16 @@ void PWMControlEngineInit()
 *      Description:      Implementation of the different-mode PI        *
 *                        controller.                                    *
 *                                                                       *
-*      Parameters:       current_value : Current process value          *
+*      Parameters:       current_control_value : Current process value  *
 *						 set_point : Desired speed (absolute value)     *
 *                        process_value : current BLDC speed             *
-*      Return value:     Next process value used as the next pwm value. *
+*      Return value:     Next control value used as the next pwm value. *
 *                                                                       *
 *      Note:                                                            *
 *                                                                       *
 *************************************************************************/
 
-int16_t PWMControlEngine( int16_t current_value, int16_t set_point, int16_t process_value )
+int16_t PWMControlEngine( int16_t current_control_value, int16_t set_point, int16_t process_value )
 {
 	int32_t err;
 	int16_t dpwm;
@@ -86,7 +86,7 @@ int16_t PWMControlEngine( int16_t current_value, int16_t set_point, int16_t proc
 	else if( dpwm < ( -MAX_PWM_CHG ) )
 		dpwm = -MAX_PWM_CHG;
 	
-	return( current_value + dpwm );
+	return( current_control_value + dpwm );
 }
  
 /*---------------------------------------------------------------------------*/

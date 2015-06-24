@@ -51,7 +51,7 @@
 
 /******************* Project includes and definition *********************/
 #include "BLDC.h"
-#include "comm_loop_new.h"
+#include "comm_loop_new_v2.h"
 
 /******************************************************************************
 * variable definitions. Use static-global to save time to create auto var.    *
@@ -71,8 +71,6 @@ uint8_t TMR0_rampup_timer;
 uint8_t TMR0_rampdown_timer;
 uint8_t TMR0_break_timer;
 uint8_t TMR0_cooldn_timer;
-uint8_t TMR0_stallcheck_timer;
-uint8_t TMR0_stall_timer;
 uint8_t TMR0_overcurrent_timer;
 uint8_t TMR0_oc_monostable_timer;
 
@@ -98,7 +96,6 @@ uint8_t timebase_10ms;
 uint8_t oc_restart_count;
 
 uint16_t pwm_current;
-uint16_t pi_blank;
 
 enum BLDC_Mode_t{
 	SPEED_MODE=0,	/* BLDC operates in speed-control mode */
@@ -126,7 +123,7 @@ void Commutate(void);
 *                                                                       *
 *************************************************************************/
 /*
-*    4|5|6|1|2|3|4|5|6|1|2|3|
+*    3|4|5|0|1|2|3|4|5|0|1|2|
 *     | | |_|_| | | | |_|_| |
 *  U _|_|/| | |\|_|_|/| | |\|
 *    _| | | | |_|_| | | | |_|
@@ -135,18 +132,19 @@ void Commutate(void);
 *  W /| | |\|_|_|/| | |\|_|_|
 *
 * State  Low   High  Comparator
-*   1     V     U       -W
-*   2     W     U        V
-*   3     W     V       -U
-*   4     U     V        W
-*   5     U     W       -V
-*   6     V     W        U
+*   0     V     U       -W
+*   1     W     U        V
+*   2     W     V       -U
+*   3     U     V        W
+*   4     U     W       -V
+*   5     V     W        U
 */
+
 void Commutate(void)
 {
 	/* Low side modulation and BEMF is sensed when falling */
 	switch(comm_state) {
-	case 1:
+	case 0:
 		/* HIN = U; LIN = V; SENSE = W */
 		PSTRCON = MODULATE_V;
 		DRIVE_U = 1;
@@ -155,7 +153,7 @@ void Commutate(void)
 		COMPARATOR = SENSE_W_FALLING;
 		bemf_flag = 1;
 		break;
-	case 2:
+	case 1:
 		/* HIN = U; LIN = W; SENSE = V */
 		PSTRCON = MODULATE_W;
 		DRIVE_U = 1;
@@ -164,7 +162,7 @@ void Commutate(void)
 		COMPARATOR = SENSE_V_RISING;
 		bemf_flag = 0;
 		break;
-	case 3:
+	case 2:
 		/* HIN = V; LIN = W; SENSE = U */
 		PSTRCON = MODULATE_W;
 		DRIVE_U = 0;
@@ -173,7 +171,7 @@ void Commutate(void)
 		COMPARATOR = SENSE_U_FALLING;
 		bemf_flag = 1;
 		break;
-	case 4:
+	case 3:
 		/* HIN = V; LIN = U; SENSE = W */
 		PSTRCON = MODULATE_U;
 		DRIVE_U = 0;
@@ -182,7 +180,7 @@ void Commutate(void)
 		COMPARATOR = SENSE_W_RISING;
 		bemf_flag = 0;
 		break;
-	case 5:
+	case 4:
 		/* HIN = W; LIN = U; SENSE = V */
 		PSTRCON = MODULATE_U;
 		DRIVE_U = 0;
@@ -191,7 +189,7 @@ void Commutate(void)
 		COMPARATOR = SENSE_V_FALLING;
 		bemf_flag = 1;
 		break;
-	case 6:
+	case 5:
 		/* HIN = W; LIN = V; SENSE = U */
 		PSTRCON = MODULATE_V;
 		DRIVE_U = 0;
@@ -215,14 +213,14 @@ void Commutate(void)
 	if( ReverseDirection )
 	{
 		comm_state--;
-		if( comm_state == 0 || comm_state > 6)
-			comm_state = 6;
+		if( comm_state > 5)	/* Wrap around */
+			comm_state = 5;
 	}
 	else
 	{
 		comm_state++;
-		if( comm_state == 0 || comm_state > 6)
-			comm_state = 1;
+		if( comm_state > 5)
+			comm_state = 0;
 	}
 } /* end Commutate */
 /*---------------------------------------------------------------------------*/
@@ -325,16 +323,11 @@ void BLDC_Setup( void )
 {
 	if( BLDC_State != SETUP ) return;
 
-	/* Disable current limiting during start up*/
-	CCP1AS = 0;
-	
 	/* Setup TimeBase parameters */
 	TMR0_rampup_timer = TIMEBASE_RAMPUP_COUNT;
 	TMR0_rampdown_timer = TIMEBASE_RAMPDOWN_COUNT;
 	TMR0_break_timer = TIMEBASE_BREAK_COUNT;
 	TMR0_cooldn_timer = TIMEBASE_COOLDN_COUNT;
-	TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
-	TMR0_stall_timer = TIMEBASE_STALL_COUNT;
 	
 	/* Setup commutation scheme */
 	CommLoop_Setup();
@@ -427,46 +420,8 @@ void BLDC_Commute( void )
 {
 	if( BLDC_State != COMMUTE ) return;
 
-	/* Turn off red LED while COMMUTE */
-	LED_ERROR = 0;
-
-	/* TMR0_stall_timer is reset every stable detect event if no stable events
-	 are detected then the timer will time-out forcing the control into
-	 a stop condition (RAMPDOWN). */
-	--TMR0_stall_timer;
-	if( TMR0_stall_timer == 0 )
-	{
-		/* Turn on red LED when stall */
-		LED_ERROR = 1;
-		BLDC_State = RAMPDOWN;
-	}
-
-   /* The control algorithm and zero-cross detection will increase the
-	commutation rate in search of commutation period resulting in zero-cross
-	detection in the middle of the period. The intrinsic reactance of the motor
-	stator and rotor will produce a false zero-crossing event of a stalled
-	motor at a predictable commutation rate, depending on the motor and rotor
-	position to the stator. This is usually a rate faster than the motor can
-	actually spin. When a commutation period as short as or shorter than the
-	rate where false zero-crossing events occur then a stall condition is
-	detected and the motor is stopped. */
-	--TMR0_stallcheck_timer;
-	if( TMR0_stallcheck_timer == 0 )
-	{
-		TMR0_stallcheck_timer = TIMEBASE_STALLCHECK_COUNT;
-
-		/* TMR1_comm_time is the preset value for the commutation period.
-		 Commutation time is the time from preset value to overflow.
-		 Larger numbers represent shorter periods. If the algorithm sets
-		 TMR1_comm_time to a period shorter than the stall trigger point
-		 then stop the motor.*/
-		if( comm_time() < (uint16_t)MIN_COMM_TIME)
-		{
-			/* Turn on red LED when stall */
-			LED_ERROR = 1;
-			BLDC_State = RAMPDOWN;
-		}
-	}
+	/* Our algorithm detects motor stall within interrupt routine.
+	Therefore, we do not perform any operation here */
 }
 /*---------------------------------------------------------------------------*/
 
@@ -1045,7 +1000,7 @@ void InitSystem( void )
 	/* FVR, DAC, and Temperature sensors */
 	FVRCON = FVRCON_INIT;
 	DACCON0 = DACCON0_INIT;
-	DACCON1 = DAC_DEFAULT_CURRENT;
+	DACCON1 = DAC_STARTING_CURRENT;
 
 	/* ADC */
 	ADCON0 = ADCON0_INIT;
@@ -1056,6 +1011,7 @@ void InitSystem( void )
 
 	/* PWM auto-shutdown and auto-restart */
 	PWM1CON = PWM1CON_INIT;
+	CCP1AS = ECCP1AS_INIT; /* Activate current limit */
 
 	/* COMPARATORS */
 	CMxCON0 = CMxCON0_INIT;
@@ -1082,7 +1038,7 @@ void InitSystem( void )
 	
 	/* SPI */
 	SSPCON1 = SSPCON1_INIT;
-        SSPIF = 0;
+	SSPIF = 0;
 
 	/* TIMER0 and related startup variables */
 	TMR0 = 0;
@@ -1190,16 +1146,6 @@ inline void SpeedManager(void)
 
 	if( BLDC_State == COMMUTE )
 	{
-		/* Blank time after enter COMMUTE state. We should hesitate to perform
-		PWM control because the newly-entered COMMUTE state may be still
-		unstable */
-		
-		/*if(pi_blank != 0)
-		{
-			pi_blank--;
-			return;
-		}*/
-
 		/* If request to stop the motor or change rotation direction,
 		then stop the motor first. */
 		if( ( desired_speed == 0 )
@@ -1226,7 +1172,6 @@ inline void SpeedManager(void)
 	else
 	{
 		/* BLDC is not in COMMUTE state, do not start PWM closed-loop control*/
-		pi_blank = 1;
 		PWMControlEngineInit();
 
 		if( ( desired_speed >= MIN_RPM ) && ( BLDC_State == STOP ) )
@@ -1258,7 +1203,7 @@ inline void CheckOverCurrent( void )
 {
 	/* Check for over-current. Over-current status will be cleared by
 	monostable operation in Main */
-	if( OC_STAT == 1 )
+	if( ( BLDC_State == COMMUTE ) && ( OC_STAT == 1 ) )
 	{
 		TMR0_oc_monostable_timer = TIMEBASE_OC_DELAY_COUNT;
 		LED_OVERCURRENT = 1;
@@ -1303,12 +1248,11 @@ inline void CheckOverTemp( void )
 *************************************************************************/
 void main( void )
 {
-	uint8_t	control_timer, pwm_timer;
+	uint8_t	control_timer;
     uint16_t i = 0;
     
 	timebase_10ms = TIMEBASE_LOAD_10ms;
 	control_timer = TIMEBASE_CONTROL_ITER_COUNT;
-        pwm_timer = 2;
 	ReverseDirection = 0;
 	desired_speed = 0;
 	desired_pwm = 0;
@@ -1343,10 +1287,6 @@ void main( void )
 	//DRIVE_V = 1;
 	//DRIVE_W = 1;
 
-
-        //desired_pwm = STARTUP_DUTY_CYCLE;
-    
-    
     BLDC_Mode = PWM_MODE;
     /* End of debugging code */
 
@@ -1397,7 +1337,7 @@ void main( void )
 			control_timer--;
 			if( control_timer == 0 )
 			{
-				/* Outer control algorithm should be performed in longer
+				/* High-level control algorithm should be performed in longer
 				interval than 10ms. Otherwise, the motor is unstable in
 				high speed */
 				control_timer = TIMEBASE_CONTROL_ITER_COUNT;
@@ -1407,13 +1347,9 @@ void main( void )
 					SpeedManager();
 				}
 			}
-                        pwm_timer--;
-                        if( pwm_timer == 0 )
-                        {
-                            pwm_timer = 2;
-                            PwmManager();
-                        }
 
+			/* Perform low-level control */			
+			PwmManager();
 
 			/* DEBUG */
 			if( i < 65530 )
@@ -1422,15 +1358,14 @@ void main( void )
             {
 				//ReverseDirection = 1;
 				//BLDC_State = SETUP;
-				//desired_speed = MIN_RPM;
-				//STARTUP_DUTY_CYCLE = 
-				//desired_pwm = STARTUP_DUTY_CYCLE*2; /* Max = 635 */
+				//desired_speed = 4000;
+				desired_pwm = STARTUP_DUTY_CYCLE; /* Max = 635, startup = 127 */
                 //desired_pwm = 330;  // Max for V2 (6.7A)
-                desired_pwm = 250;
+                //desired_pwm = 250;
 			}
 			if( i == 800 )
 			{
-                desired_pwm = 330;
+                desired_pwm = 290;
 				//desired_speed = 6000;
 			}
 			if( i == 1200 )

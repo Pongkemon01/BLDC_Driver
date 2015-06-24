@@ -27,32 +27,20 @@
 /******************* System includes and definition *********************/
 #include <xc.h>
 #include "BLDC.h"
-#include "comm_loop_new.h"
-
-uint16_t startup_rpm = UNEG(COMM_TIME_INIT);
-
-uint16_t avg_backlog[AVG_BACKLOG_SIZE];
-uint8_t avg_backlog_index;
+#include "comm_loop_new_v2.h"
 
 /* Variables for ISR */
 enum isr_state_t{zero_detect,commutate} isr_state;
 uint8_t zc_count;
-#if !(INTE_SCALE > 15)
-	int16_t sum_zc_error;
-#endif
-#if !(DIFF_SCALE > 15)
-	int16_t prev_zc_error;
-#endif
+uint16_t avg_zc;
 
 /* Zero-crossing timing state */
-doublebyte TMR1_comm_time;
 doublebyte zc;
-doublebyte prev_zc;
 doublebyte comm_after_zc;
+uint16_t TMR1_comm_time;
 
 /* Timer counters for startup */
 uint8_t TMR0_excite_timer;
-uint16_t current_pwm;
 
 /*---------------------------------------------------------------------------*/
 
@@ -90,8 +78,6 @@ interrupt_handler(void)
 {
 static uint8_t ctemp; /* Dummy variable used to clear some registers */
 static doublebyte temp_comm_time;
-static uint16_t expected_zc, avg_zc;
-static int16_t zc_error, temp1, temp2;
 
 	switch (isr_state)
 	{
@@ -107,9 +93,6 @@ static int16_t zc_error, temp1, temp2;
 			      to commutation.
 			*/
 
-			/* Save previous zc time */
-			prev_zc.word = zc.word;
-
 			if(CxIF)
 			{
 				/* Interrupt is from the comparator */
@@ -123,9 +106,10 @@ static int16_t zc_error, temp1, temp2;
 					zc.bytes.low = TMR1L;
 				}while (zc.bytes.high != TMR1H);
 				
-				if( zc.word <= TMR1_comm_time.word )
-					zc.word = TMR1_comm_time.word;
-
+				/* zc time was scaled by 0x8000 (the 15th bit is 1) so we
+				scale it back */
+				zc.word &= 0x7FFFU;
+				
 				if(BLDC_State == COMMUTE)
 				{
 					/* During normal commutation, we adjust timer to commutate
@@ -137,6 +121,26 @@ static int16_t zc_error, temp1, temp2;
 					TMR1H = comm_after_zc.bytes.high;
 					TMR1L = comm_after_zc.bytes.low;
 					TMR1ON = 1;
+					
+					/* We finished timely critical task so we do something to
+					prepare for next commutation state. This should reduce
+					timely critical requirement for the next step. */
+					
+					/* Zero crossing occurred too early. We cannot control
+					the motor any more */
+					if( zc.word < MIN_ZC_TIME )
+					{
+						LED_OK = 0;
+						LED_ERROR = 1;
+						BLDC_State = RAMPDOWN;
+					}
+					/* Exponential average */
+					avg_zc = ( avg_zc >> 1 ) + ( ( zc.word ) >> 1 );
+					
+					/* Zero crossing should occur in the middle of commutation
+					period. Therefore, commutation time is twice of zero-crossing
+					time. */
+					TMR1_comm_time = ( avg_zc ) << 1; /* avg_zc is positive time */
 				}
 
 				/* If we can detect contiguous BEMF in RAMPUP, we can go to
@@ -148,56 +152,33 @@ static int16_t zc_error, temp1, temp2;
 					{
 						/* Turn on LED OK when entering COMMUTE */
 						LED_OK = 1;
+						LED_ERROR = 0;
+						DACCON1 = DAC_RUNNING_CURRENT;
 						BLDC_State = COMMUTE;
-						CCP1AS = ECCP1AS_INIT; /* Activate current limit */
 					}
 				}
 
-				/* Reset stall timer as we have detected BEMF */
-				TMR0_stall_timer = TIMEBASE_STALL_COUNT;
-
 				isr_state = commutate;
-				break;
 			}
 			else
 			{
 				/* Interrupt is from timer1
 				If execution reaches this point then a Timer1 interrupt
 				occurred before zero-crossing was detected. This should only
-				happen during deceleration and acceleration in startup. */
+				happen during acceleration in startup. However, it should not
+				occur in normal commutation. */
 				
-				/* Corrective calculation */
-
-				zc_count = EXPECT_ZC_COUNT;
-				/* adjust the zero-crossing time to catch up with the motor */
 				if(BLDC_State == COMMUTE)
 				{
-					/* At this moment, we don't have zc information because
-					we missed the zero crossing. The current zc was acquired
-					from the previous zero crossing time. We must adjust
-					something to accomodate this event to error adjustment below.
-					The error calculation performs on zc and expected_zc.
-					However, the value of expected_zc will be evaluated later
-					from TMR1_comm_time. Therefore, we should attach this
-					error event in either zc or TMR1_comm_time.
-					
-					Moreover, attaching zc missing in TMR1_comm_time affects
-					free-running period
-					Remember that both of them are negative by nature. */
-
-					/* Cases of embedded in zc */					
-					/* Assume that zero-crossing at the end of commutation */
-					zc.word = 0xFFA0;
-                                    //zc.word += ( (expected_zc>>3) | 0xE000U );
-					
-					/* Cases of embedded in TMR1_comm_time */
-					/* TMR1_comm_time is negative so adding negative number
-					lengthens comm time. (lengthen by 1/8 commutation cycle) */
-					//TMR1_comm_time.word += ( (expected_zc>>3) | 0xE000U );
+					/* During COMMUTE state, we should not be here
+					because we set the TIMER to the maximum allowable interval.
+					If we ever reach here, we have got troubles */
+					LED_OK = 0;
+					LED_ERROR = 1;
+					BLDC_State = RAMPDOWN;
 				}
-				/* No "break" statement here. We follow through
-				"commutate" state to process timer1 interrupt. */
 			}
+			break;
 
 		case commutate:
 			/* Only Timer1 interrupt is handled in this state.
@@ -222,8 +203,14 @@ static int16_t zc_error, temp1, temp2;
 				Commutate();
 				if(bemf_flag ^ ReverseDirection)
 				{
+					/* Zero crossing should occurred within a half range of 
+					Timer1 counting. Otherwise, we cannot manage commutation
+					time, which is twice of the zero-crossing time. Therefore, 
+					we start searching for zero-crossing event by setting
+					Timer1 to start at 0x8000 (half way of full-range counting) */
+					
 					/* Adjust Timer1 preset to account for minimum blanking time */
-					temp_comm_time.word = TMR1_comm_time.word + BLANKING_COUNT;
+					temp_comm_time.word = 0x8000U + BLANKING_COUNT;
 
 					/* Wait a mimimum blanking time to allow drivers to settle */
 					while(TMR1L < BLANKING_COUNT);
@@ -256,21 +243,11 @@ static int16_t zc_error, temp1, temp2;
 				}
 				else
 				{
-					/* Compute corrected commutation time from present
-					   commutation time and zero-crossing event time.
-					   Zero-crossing error is the difference between
-					   when ZC should have happened and when it actually
-					   happened. Negative error shortens the commutation time
-					   and positive error lengthens the commutation time.
-
-					   ZCE(n) = ZC(n)-(CT(n)/2)
-					   CT(n+1) = CT(n) + ZCE(n)*Error_Gain
-					   where:
-					     CT is commutation time
-					     ZC is zero-crossing event time
-					     ZCE is zero-crossing error
-					     (n) denotes present cycle
-					     (n+1) denotes next cycle
+					/* Compute corrected commutation time from zero-crossing
+					   event time. Zero-crossing time was recorded when Timer1
+					   had started counting up from 0. Therefore, the recorded
+					   Timer1 value can be considered as a positive time value,
+					   which is opposite from our Timer1 assumption below.
 
 					   Timer1 is a 16-bit timer that counts up. The time to
 					   overflow is the negative of the count in Timer1.
@@ -279,99 +256,13 @@ static int16_t zc_error, temp1, temp2;
 					   counts are negative, even when the most significant bit
 					   is zero. Therefore, it is easiest to think of Timer1 as
 					   a 17-bit counter where the most significant
-					   (unimplemented) bit is permantly fixed to 1.
-					   The variables TMR1_comm_time and expected_zc are
-					   signed 16-bit integers. When TMR1_comm_time is shifted
-					   right to divide-by-2 then the 17th bit extension is lost
-					   if the 16th bit of Timer1 is zero. We compensate for
-					   the lost extension by forcing the extension on the
-					   TMR1_comm_time right shift.
+					   (unimplemented) bit is permanently fixed to 1.
 					*/
 
-					expected_zc = UDIV2( TMR1_comm_time.word ); /* CT(n)/2 */
-					/* Average zc time using SMA(2) */
-					avg_zc = UDIV2( zc.word ) + UDIV2( prev_zc.word );
-
-#if !(DIFF_SCALE > 15)
-					prev_zc_error = zc_error;
-#endif
-
-					zc_error = (int16_t)(avg_zc - expected_zc); /* ZCE(n) = ZC(n)-(CT(n)/2) */
-
-#if !(INTE_SCALE > 15)
-					sum_zc_error += zc_error;
+					/* TMR1_comm_time was prepared in zero-detect state. */
 					
-					/* Limit sum_zc_error to 15000 (empirical value) */
-					if( sum_zc_error > 15000 ) sum_zc_error = 15000;
-					if( sum_zc_error < -15000 ) sum_zc_error = -15000;
-#endif
-
-					/* stop forced commutation if zero cross detected within
-					middle half of commutation period */
-					/* Note by Pong: we can adjust how narrow of the zero cross
-					range. For example, ((-expected_zc.word)>>2) for within
-					the middle quater. */
-					/* absolute value */
-					if( zc_error < 0 )
-						temp1 = -zc_error;
-					else
-						temp1 = zc_error;
-					temp2 = (int16_t)(UNEG( expected_zc ));
-					temp2 >>= 1;
-					if (temp1 < temp2)
-					{
-						if( BLDC_State == RAMPUP )
-						{
-							zc_count--;
-							if( zc_count == 0 )
-							{
-								/* Turn on LED OK when entering COMMUTE */
-								LED_OK = 1;
-								BLDC_State = COMMUTE;
-								CCP1AS = ECCP1AS_INIT; /* Activate current limit */
-							}
-						}
-
-						/* Reset stall timer as we have detected BEMF */
-						TMR0_stall_timer = TIMEBASE_STALL_COUNT;
-					}
-					else
-						zc_count = EXPECT_ZC_COUNT;
-
-					/* zc_error and sum_zc_error are signed integer so conventional shifting
-					is signed extended */
-					/* The original algorithm from Microchip is a proportional
-					controller. The equation is :
-						-CT(n+1) = -CT(n) - ZCE(n)*Error_Gain
-					 Later modification attempt to add integral part and then
-					 to add differential part to become full PID controller */
-					
-					/* Part 1: Proportional part (the original part) */
-					if( TMR1 > 0xF636 ) // Higher than 4000 rpm
-						TMR1_comm_time.word -= (uint16_t)(zc_error >> (ERROR_SCALE - 1));
-					else
-						TMR1_comm_time.word -= (uint16_t)(zc_error >> ERROR_SCALE);
-
-#if !(INTE_SCALE > 15)
-					/* Part 2: Integral part (Added on 5-Jun-2015) (tested) */
-					TMR1_comm_time.word -= (uint16_t)(sum_zc_error >> INTE_SCALE);
-#endif
-
-#if !(DIFF_SCALE > 15)
-					/* Part 3: Differential part (Added on 6-Jun-2015 (yet to test) */
-					TMR1_comm_time.word -= (uint16_t)((zc_error - prev_zc_error) >> DIFF_SCALE);
-#endif
-					
-					/* Keep current TMR1_comm_time in backlog */
-					avg_backlog[avg_backlog_index] = UNEG(TMR1_comm_time.word);
-					avg_backlog_index++;
-					avg_backlog_index &= AVG_BACKLOG_MASK;
-										
-					/* Limit zc to TMR1_comm_time */
-					if( zc.word < TMR1_comm_time.word )
-						zc.word = TMR1_comm_time.word;
-						
-					temp_comm_time.word = TMR1_comm_time.word + FIXED_ADVANCE_COUNT;
+					/* Negative the time to conform with Timer1 */
+					temp_comm_time.word = UNEG( TMR1_comm_time ) + FIXED_ADVANCE_COUNT;
 
 					/* setup for commutation */
 					TMR1ON = 0;
@@ -387,7 +278,7 @@ static int16_t zc_error, temp1, temp2;
 					   ADVANCE_COUNT is positive time to advance. Adding
 					   positive number to negative time shortens the negative time
 					*/
-					comm_after_zc.word = expected_zc + ADVANCE_COUNT;
+					comm_after_zc.word = UNEG( avg_zc ) + ADVANCE_COUNT;
 				}
 			}
 			break;
@@ -420,15 +311,9 @@ static int16_t zc_error, temp1, temp2;
 *                                                                       *
 *************************************************************************/
 
-uint16_t AvgCommTime(void)
+inline uint16_t avg_comm_time(void)
 {
-	uint32_t comm_sum;
-	uint8_t c;
-	
-	comm_sum = 0;
-	for( c = 0; c < AVG_BACKLOG_SIZE; c++ )
-		comm_sum += (uint32_t)( avg_backlog[c] );
-	return( (uint16_t)( comm_sum >> AVG_BACKLOG_LEN ) );
+	return( TMR1_comm_time );
 }
 /*---------------------------------------------------------------------------*/
 
@@ -451,24 +336,14 @@ void CommLoop_Setup()
 	
 	TMR0_excite_timer = TIMEBASE_EXCITE_COUNT;
 
-	/* Clear previous speed backlog */
-	for( c = 0 ; c < AVG_BACKLOG_SIZE ; c++ )
-		avg_backlog[c] = 0;
-	avg_backlog_index = 0;
+	/* Clear previous commutation time */
+	TMR1_comm_time = 0;
 	
-	/* Clear all control variables */
-#if !(INTE_SCALE > 15)
-	sum_zc_error = 0;
-#endif
-#if !(DIFF_SCALE > 15)
-	prev_zc_error = 0;
-#endif
+	/* Set start-up current limit */
+	DACCON1 = DAC_STARTING_CURRENT;
 
 	/* Start the first move */
 	/* startup duty cycle; It is already normalized to MAX_DUTY_CYCLE */
-	//current_pwm = ALIGN_PWM_START;
-	//SetCCPVal( ALIGN_PWM_START );
-	current_pwm = STARTUP_DUTY_CYCLE;
 	SetCCPVal( STARTUP_DUTY_CYCLE );
 	CCP1CON = CCP1CON_INIT;           /* PWM on */
 	
@@ -497,6 +372,8 @@ void CommLoop_Setup()
 
 uint8_t CommLoop_Align(void) /* Excitation phase */
 {
+doublebyte comm_time;
+
 	/* The excitation timer determines how long to dwell at each slow
 	 start commutation point. */
 	--TMR0_excite_timer;
@@ -505,14 +382,15 @@ uint8_t CommLoop_Align(void) /* Excitation phase */
 		zc_count = EXPECT_ZC_COUNT;
 
 		/* Initial RPM */
-		TMR1_comm_time.word = startup_rpm;
+		comm_time.word = UNEG( COMM_TIME_INIT );
 
 		/* Setup commutation timing */
-		zc.word = startup_rpm;	/* zc cannot go lower than TMR1_comm_time */
-		comm_after_zc.word = UDIV2( zc.word );
+		zc.word = UDIV2( comm_time.word );	/* zc cannot go lower than TMR1_comm_time */
+		comm_after_zc.word = zc.word;
+		avg_zc = 0;
 
-		TMR1H = TMR1_comm_time.bytes.high;
-		TMR1L = TMR1_comm_time.bytes.low;
+		TMR1H = comm_time.bytes.high;
+		TMR1L = comm_time.bytes.low;
 		isr_state = commutate;
 		/* Setup commutation phase for start up */
 		/* HIN = none */
@@ -523,13 +401,13 @@ uint8_t CommLoop_Align(void) /* Excitation phase */
 		{
 			/* LIN = V */
 			PSTRCON = MODULATE_V;
-			comm_state = 6;
+			comm_state = 5;
 		}
 		else
 		{
 			/* LIN = W */
 			PSTRCON = MODULATE_W;
-			comm_state = 3;
+			comm_state = 2;
 		}
 		Commutate();	/* Make the first move */
 		TMR1ON = 1;

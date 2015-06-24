@@ -43,6 +43,8 @@
 #define INTE_SCALE			16
 #define DIFF_SCALE			16
 
+#define MIN_TMR1_VALUE		( 0xFFFF - (TMR1_FREQUENCY / ((ABSOLUTE_MIN_RPM * COMM_PER_REV) / SEC_PER_MIN)) )
+
 /* History length for speed averaging */
 #define AVG_BACKLOG_LEN		3	/* Length is 2^(AVG_BACKLOG_LEN) */
 #define AVG_BACKLOG_SIZE	( 1 << AVG_BACKLOG_LEN )

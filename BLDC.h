@@ -127,15 +127,6 @@
 // (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
 #define  TIMEBASE_COOLDN_ms            100
 
-// time for continuous unstable condition to cause stall
-// TIMER0_STALL_ms = number of milliseconds in out-of-lock condition to recognize stall
-// (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMER0_STALL_ms               2000
-                                          
-// number of milliseconds between each motor stall condition check
-// (maximum ms is 255*TIMEBASE_MS_PER_COUNT)
-#define  TIMEBASE_STALLCHECK_ms        500
-
 /* number of milliseconds that allow for over-current condition.
 	If over-current cannot be cleared within this period, BLDC driver will
 	perform shutting down procedure. */
@@ -155,8 +146,6 @@
 #define TIMEBASE_RAMPDOWN_COUNT		(TIMEBASE_RAMPDOWN_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_BREAK_COUNT		(TIMEBASE_BREAK_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_COOLDN_COUNT		(TIMEBASE_COOLDN_ms/TIMEBASE_MS_PER_COUNT)
-#define TIMEBASE_STALL_COUNT		(TIMER0_STALL_ms/TIMEBASE_MS_PER_COUNT)
-#define TIMEBASE_STALLCHECK_COUNT	(TIMEBASE_STALLCHECK_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_OVERCURRENT_COUNT	(TIMEBASE_OVERCURRENT_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_OC_DELAY_COUNT		(TIMEBASE_OC_DELAY_ms/TIMEBASE_MS_PER_COUNT)
 #define TIMEBASE_CONTROL_ITER_COUNT	(TIMEBASE_CONTROL_ITER_ms/TIMEBASE_MS_PER_COUNT)
@@ -187,7 +176,7 @@
  ******************************************************/
 
 // PWM mode
-#define CCP1CON_INIT           0b00001100
+#define CCP1CON_INIT           0b00001100U
 
 #define TIMER2_FREQUENCY       (SYSTEM_FREQUENCY/TIMER2_PRESCALE)
 
@@ -213,10 +202,10 @@
 /* ECCP */
 
 /* auto shutdown on C2OUT (Over current), drive output pins to 0 */
-#define ECCP1AS_INIT         0b00100000
+#define ECCP1AS_INIT         0b00100000U
 
 /* auto restart */
-#define PWM1CON_INIT         0b10000000
+#define PWM1CON_INIT         0b10000000U
 
 /* Over-current indicator */
 #define OC_STAT			CCP1ASE
@@ -258,24 +247,24 @@
 /*-----------------------------------------------------------*/
 
 // PORTA (PORT) 
-#define   TRISA_INIT       0b00101011
-#define   PORTA_INIT       0b00000000
-#define   TRISA_ERROR      0b11111111
-#define   PORTA_ERROR      0b11111111
+#define   TRISA_INIT       0b00101011U
+#define   PORTA_INIT       0b00000000U
+#define   TRISA_ERROR      0b11111111U
+#define   PORTA_ERROR      0b11111111U
 /*-----------------------------------------------------------*/
 
 // PORTB (PORT)
-#define   TRISB_INIT       0b00001010
-#define   PORTB_INIT       0b00000000
-#define   TRISB_ERROR      0b11111111
-#define   PORTB_ERROR      0b11111111
+#define   TRISB_INIT       0b00001010U
+#define   PORTB_INIT       0b00000000U
+#define   TRISB_ERROR      0b11111111U
+#define   PORTB_ERROR      0b11111111U
 /*-----------------------------------------------------------*/
 
 // PORTC (PORT)
-#define   TRISC_INIT       0b00011000
-#define   PORTC_INIT       0b00000000
-#define   TRISC_ERROR      0b11111111
-#define   PORTC_ERROR      0b11111111
+#define   TRISC_INIT       0b00011000U
+#define   PORTC_INIT       0b00000000U
+#define   TRISC_ERROR      0b11111111U
+#define   PORTC_ERROR      0b11111111U
 /*-----------------------------------------------------------*/
 
 /******************************************************
@@ -304,24 +293,24 @@
  Comparator bit definitions 
 */
 // CMxCON0
-#define CxON            0b10000000
-#define CxOE            0b00100000
-#define CxINV           0b00010000
-#define CxFAST          0b00000100
-#define CxHYST          0b00000010
-#define CxSYNC          0b00000001
+#define CxON            0b10000000U
+#define CxOE            0b00100000U
+#define CxINV           0b00010000U
+#define CxFAST          0b00000100U
+#define CxHYST          0b00000010U
+#define CxSYNC          0b00000001U
 
 // CMxCON1
-#define CxINTP          0b10000000
-#define CxINTN          0b01000000
-#define CxPIN           0b00000000
-#define CxCDAC          0b00010000  
-#define CxFVR           0b00100000
-#define CxGND           0b00110000
-#define CxIN0           0b00000000
-#define CxIN1           0b00000001
-#define CxIN2           0b00000010
-#define CxIN3           0b00000011
+#define CxINTP          0b10000000U
+#define CxINTN          0b01000000U
+#define CxPIN           0b00000000U
+#define CxCDAC          0b00010000U 
+#define CxFVR           0b00100000U
+#define CxGND           0b00110000U
+#define CxIN0           0b00000000U
+#define CxIN1           0b00000001U
+#define CxIN2           0b00000010U
+#define CxIN3           0b00000011U
 /*-----------------------------------------------------------*/
 
 /* Comparator initializations */
@@ -338,29 +327,34 @@
 /******************************************************
  * FVR, DAC, and Temperature sensor
  ******************************************************/
-#define FVRCON_INIT		0b11111000	/* Out 2.048V to DAC. Also turn-on temperature sensor */
-#define DACCON0_INIT	0b11001000	/* Use FVR as ref+ and GND as ref- */
-#define DAC_3A			5			/* DAC value for 3A */
-#define DAC_3A66		6			/* DAC value for 3.66A */
-#define DAC_5A			8			/* DAC value for 5A */
-#define DAC_6A			10			/* DAC value for 5A */
-#define DAC_6A7			11			/* DAC value for 5A */
-#define DAC_7A3			12			/* DAC value for 5A */
-#define DAC_8A			13			/* DAC value for 5A */
-#define DAC_10A			16			/* DAC value for 10A */
-#define DAC_12A			20			/* DAC value for 12A */
-#define DAC_14A			23			/* DAC value for 14A */
-#define DAC_DEFAULT_CURRENT	DAC_7A3	/* Power Dis. for MOSFET is 59w@16.4v = 3.5A */
+#define FVRCON_INIT		0b11111000U	/* Out 2.048V to DAC. Also turn-on temperature sensor */
+#define DACCON0_INIT	0b11001000U	/* Use FVR as ref+ and GND as ref- */
+#define DAC_0A61		1U			/* DAC value for 0.61A */
+#define DAC_1A22		2U
+#define	DAC_1A83		3U
+#define DAC_2A44		4U
+#define DAC_3A			5U			/* DAC value for 3A */
+#define DAC_3A66		6U			/* DAC value for 3.66A */
+#define DAC_5A			8U			/* DAC value for 5A */
+#define DAC_6A			10U			/* DAC value for 5A */
+#define DAC_6A7			11U			/* DAC value for 5A */
+#define DAC_7A3			12U			/* DAC value for 5A */
+#define DAC_8A			13U			/* DAC value for 5A */
+#define DAC_10A			16U			/* DAC value for 10A */
+#define DAC_12A			20U			/* DAC value for 12A */
+#define DAC_14A			23U			/* DAC value for 14A */
+#define DAC_RUNNING_CURRENT	DAC_0A61	/* Power Dis. for MOSFET is 59w@16.4v = 3.5A */
+#define DAC_STARTING_CURRENT DAC_1A22	/* Current at starting */
 
 /******************************************************
  * ADC
  ******************************************************/
 
-#define ANSELA_INIT          0b00001011
-#define ANSELB_INIT          0b00001010
+#define ANSELA_INIT          0b00001011U
+#define ANSELB_INIT          0b00001010U
 
-#define ADCON0_INIT		0b01110101	/* Use temperature sensor as input */
-#define ADCON1_INIT		0b10100000	/* Fosc/32 = 1us switching step, vdd-gnd as ref. */
+#define ADCON0_INIT		0b01110101U	/* Use temperature sensor as input */
+#define ADCON1_INIT		0b10100000U	/* Fosc/32 = 1us switching step, vdd-gnd as ref. */
 
 #define OC_ADCOUT		597	/* Set to about 65 degree celcius */
 
@@ -394,9 +388,9 @@
 #define MODULATE_V_BIT       LATB2
 #define MODULATE_W_BIT       LATB4
 
-#define MODULATE_A           0b00000001
-#define MODULATE_B           0b00000010
-#define MODULATE_C           0b00001000
+#define MODULATE_A           0b00000001U
+#define MODULATE_B           0b00000010U
+#define MODULATE_C           0b00001000U
 #define MODULATE_U           MODULATE_A
 #define MODULATE_V           MODULATE_B
 #define MODULATE_W           MODULATE_C

@@ -45,7 +45,9 @@
 /* start speed in electrical RPM. However, since timer register is a
  * 16-bit register counting at 1MHz, counting for 1 round can manage
  * the speed at the minimum rate of 160RPM(elec) */
-#define START_RPM               700
+#define ABSOLUTE_MIN_RPM		160
+//#define START_RPM               700
+#define START_RPM               1000
 
 // percentage of speed request below which the motor will turn off
 #define LOW_OFF_REQUEST_PCT       16L
@@ -116,42 +118,42 @@ time with this value will give the RPM.
 #define BLANKING_COUNT_us		      100U
 #define BLANKING_COUNT              (BLANKING_COUNT_us * TMR1_COUNTS_PER_us)
 
-// stall commutation time in microseconds
-#define  STALL_COUNT_us             100UL
-
-// # of Timer1 counts below which a stall condition is detected
-#ifndef MICROSECONDS_PER_SECOND
-    #define MICROSECONDS_PER_SECOND     1000000UL
-#endif
-#define MIN_COMM_TIME               ((STALL_COUNT_us * TMR1_COUNTS_PER_SEC)/MICROSECONDS_PER_SECOND)
-
 // Number of microseconds to commutate early after zero cross
 // this number is subtracted from half the expected commutation time to set commutation event after zero cross
-#define ADVANCE_TIMING_us           0L
+#define ADVANCE_TIMING_us           7L
 // Commutation happens in two stages
 // Stage 1 is zero cross detection: Commutation is forced 1/2 commutation period after the Z-C event.
 // Stage 2 is fixed commutation: Commutation timer is set at beginning for full commutation period.
 // Stage 1 takes 12 us to detect Z-C and restuff the commutation timer. FIXED_ADVANCE_us adjusts for that difference.
-#define FIXED_ADVANCE_TIMING_us     ADVANCE_TIMING_us - 0L
+//#define FIXED_ADVANCE_TIMING_us     ADVANCE_TIMING_us - 0L
+#define FIXED_ADVANCE_TIMING_us     15L
 
 #define ADVANCE_COUNT               (ADVANCE_TIMING_us*TMR1_COUNTS_PER_us)
 #define FIXED_ADVANCE_COUNT         (FIXED_ADVANCE_TIMING_us*TMR1_COUNTS_PER_us)
+
+/* Define minimum zero-crossing time. If zero-crossing event occurs with
+the time less than this value. Our driver cannot perform stable control */
+#if ADCANCE_COUNT > FIXED_ADVANCE_COUNT
+  #define MIN_ZC_TIME	( ADVANCE_COUNT << 1 )
+#else
+  #define MIN_ZC_TIME	( FIXED_ADVANCE_COUNT << 1 )
+#endif
 
 /* PWM_ROC the maximum amount of PWM change in a control interval.
    Too high value may cause the motor unstable. Lower value makes the motor
    to reach desired speed slower.
 */
-#define PWM_ROC			10
+#define PWM_ROC			6
 
 ////////////////////////////////////////////////////////////////////////////////////////
 //// On-Off limits
 
 // +1 forces PWM to 100% duty cycle and adjust to 10 bits
-#define MAX_DUTY_CYCLE        ((PWM_PERIOD+1)<<2)
+#define MAX_DUTY_CYCLE			((PWM_PERIOD+1)<<2)
 #define MAX_PRAC_DUTY_CYCLE		((MAX_PRAC_DUTY_PCT*MAX_DUTY_CYCLE)/100L)
-#define STARTUP_DUTY_CYCLE        ((STARTUP_DRIVE_PCT*MAX_DUTY_CYCLE)/100L)
+#define STARTUP_DUTY_CYCLE		((STARTUP_DRIVE_PCT*MAX_DUTY_CYCLE)/100L)
 
-#define REQUEST_OFF					((LOW_OFF_REQUEST_PCT*MAX_DUTY_CYCLE)/100L)
+#define REQUEST_OFF				((LOW_OFF_REQUEST_PCT*MAX_DUTY_CYCLE)/100L)
 
 /* Spec for VideoRay Thruster */
 #define MIN_RPM                 2500
